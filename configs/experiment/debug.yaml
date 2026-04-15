@@ -1,0 +1,31 @@
+# Debug run – overrides base.yaml for fast iteration
+# Usage: python train.py --config configs/experiment/debug.yaml
+
+data:
+  image_size: 224
+  num_workers: 0
+
+model:
+  backbone: "resnet18"
+  pretrained: false
+
+training:
+  epochs: 2
+  batch_size: 4
+  lr: 0.001
+
+inference:
+  device: "cpu"
+
+checkpoint:
+  save_dir: "checkpoints/debug"
+  save_every: 1
+  keep_top_k: 1
+
+logging:
+  log_every_n_steps: 1
+
+# Flag to generate synthetic data instead of loading real images
+_debug:
+  use_synthetic: true
+  synthetic_samples: 32
