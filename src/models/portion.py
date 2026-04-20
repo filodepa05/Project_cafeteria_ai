@@ -1,76 +1,40 @@
 """
-detector.py – Feature backbone + food classification head.
+portion.py – Portion size regression head.
 
-MVP approach:
-  ResNet backbone → global average pool → FC → per-class logits
-
-This gives us image-level multi-label food classification.  A later
-milestone swaps this for torchvision Faster R-CNN to get real bounding
-boxes, but the current version lets us train end-to-end TODAY.
+Takes the shared feature vector from DetectionHead and regresses
+an estimated portion weight in grams.
 """
-
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from torchvision import models
 
 
-# Map config string → torchvision constructor + feature dim
-_BACKBONES: dict[str, tuple] = {
-    "resnet18":          (models.resnet18,          512),
-    "resnet50":          (models.resnet50,          2048),
-    "mobilenet_v3_small": (models.mobilenet_v3_small, 576),
-}
+class PortionHead(nn.Module):
+    """3-layer MLP: feature_vector → estimated grams.
 
-
-class DetectionHead(nn.Module):
-    """Backbone → feature vector → food class logits.
-
-    Attributes
-    ----------
-    backbone : nn.Module   – pretrained feature extractor (everything before FC)
-    feat_dim : int         – dimensionality of the feature vector
-    classifier : nn.Module – linear head  →  (batch, num_classes)
+    Architecture: feat_dim → hidden → hidden//2 → 1
     """
 
-    def __init__(self, backbone_name: str = "resnet50", pretrained: bool = True, num_classes: int = 10):
+    def __init__(self, feat_dim: int = 2048, hidden: int = 256):
         super().__init__()
-        if backbone_name not in _BACKBONES:
-            raise ValueError(f"Unknown backbone '{backbone_name}'. Choose from {list(_BACKBONES)}")
-
-        factory, self.feat_dim = _BACKBONES[backbone_name]
-
-        if backbone_name.startswith("resnet"):
-            weights = "IMAGENET1K_V1" if pretrained else None
-            full = factory(weights=weights)
-            # Strip the final FC — keep everything up to avgpool
-            self.backbone = nn.Sequential(*list(full.children())[:-1])  # → (B, feat_dim, 1, 1)
-        else:
-            weights = "IMAGENET1K_V1" if pretrained else None
-            full = factory(weights=weights)
-            self.backbone = full.features
-            self.backbone.add_module("pool", nn.AdaptiveAvgPool2d(1))
-
-        # Classification head
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Dropout(0.3),
-            nn.Linear(self.feat_dim, num_classes),
+        self.mlp = nn.Sequential(
+            nn.Linear(feat_dim, hidden),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden, hidden // 2),
+            nn.ReLU(),
+            nn.Linear(hidden // 2, 1),
         )
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
         """
         Parameters
         ----------
-        x : (B, 3, H, W) image tensor
+        features : (B, feat_dim) – pooled features from DetectionHead
 
         Returns
         -------
-        logits   : (B, num_classes)  – raw logits for BCE loss
-        features : (B, feat_dim)     – pooled features for the portion head
+        grams : (B, 1) – predicted portion weight
         """
-        feats = self.backbone(x)            # (B, feat_dim, 1, 1)
-        feats_flat = feats.flatten(1)       # (B, feat_dim)
-        logits = self.classifier(feats_flat)
-        return logits, feats_flat
+        return self.mlp(features)

@@ -35,7 +35,12 @@ def draw_predictions(
     y_offset = 10
     for item in items:
         label = f"{item['food']}  {item['confidence']:.0%}  ~{item['grams']:.0f}g  {item['calories']:.0f}kcal"
-        draw.text((10, y_offset), label, fill="lime")
+        try:
+            from PIL import ImageFont
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+        except (IOError, ImportError):
+            font = None  # falls back to default
+        draw.text((10, y_offset), label, fill="lime", font=font)
         y_offset += 20
 
     if save_path:

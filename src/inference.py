@@ -54,6 +54,9 @@ class TrayInferencePipeline:
 
         outputs = self.model(tensor)
         probs = torch.sigmoid(outputs["logits"][0]).cpu()           # (C,)
+        # NOTE: grams is currently an image-level prediction (one value per tray).
+        # Per-item portion estimation is a planned milestone (see roadmap).
+        # All detected items receive the same gram estimate for now.
         grams = outputs["grams"][0, 0].cpu().item()                 # scalar
 
         threshold = self.cfg.inference.confidence_threshold

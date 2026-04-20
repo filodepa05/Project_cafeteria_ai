@@ -147,6 +147,8 @@ def load_config(yaml_path: str | Path, overrides: dict[str, Any] | None = None) 
     kwargs: dict[str, Any] = {}
     for section_name, section_cls in _SUB_MAP.items():
         section_data = raw.get(section_name, {})
-        kwargs[section_name] = section_cls(**section_data)
+        valid_fields = set(section_cls.__dataclass_fields__.keys())
+        filtered = {k: v for k, v in section_data.items() if k in valid_fields}
+        kwargs[section_name] = section_cls(**filtered)
 
     return Config(**kwargs)

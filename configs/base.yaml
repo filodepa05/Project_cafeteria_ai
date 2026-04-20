@@ -5,17 +5,17 @@
 # ── Data ──────────────────────────────────────────────
 data:
   root: "data"
-  image_size: 640            # resize to square
+  image_size: 640
   train_split: 0.8
   num_workers: 4
   pin_memory: true
 
 # ── Model ─────────────────────────────────────────────
 model:
-  backbone: "resnet50"       # resnet18 | resnet50 | mobilenet_v3_small
+  backbone: "resnet50"
   pretrained: true
-  num_classes: 10            # food categories
-  portion_hidden: 256        # portion head hidden dim
+  num_classes: 10
+  portion_hidden: 256
 
 # ── Training ──────────────────────────────────────────
 training:
@@ -23,9 +23,9 @@ training:
   batch_size: 16
   lr: 0.001
   weight_decay: 0.0001
-  scheduler: "cosine"        # cosine | step | none
-  step_size: 10              # only for step scheduler
-  gamma: 0.1                 # only for step scheduler
+  scheduler: "cosine"
+  step_size: 10
+  gamma: 0.1
   detection_loss_weight: 1.0
   portion_loss_weight: 0.5
 
@@ -33,16 +33,21 @@ training:
 inference:
   confidence_threshold: 0.30
   nms_iou_threshold: 0.50
-  device: "auto"             # auto | cpu | cuda | mps
+  device: "auto"
 
-# ── Checkpointing ────────────────────────────────────
+# ── Checkpointing ─────────────────────────────────────
 checkpoint:
   save_dir: "checkpoints"
-  save_every: 5              # save every N epochs
-  keep_top_k: 3              # keep best K by val loss
+  save_every: 5
+  keep_top_k: 3
 
 # ── Logging ───────────────────────────────────────────
 logging:
   log_dir: "logs"
   log_every_n_steps: 20
   use_rich: true
+
+# ── Debug ─────────────────────────────────────────────
+_debug:
+  use_synthetic: false
+  synthetic_samples: 32

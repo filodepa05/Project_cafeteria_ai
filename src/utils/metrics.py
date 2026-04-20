@@ -36,7 +36,7 @@ def compute_portion_mae(pred_grams: torch.Tensor, true_grams: torch.Tensor) -> f
     -------
     MAE in grams.
     """
-    return torch.abs(pred_grams.squeeze() - true_grams).mean().item()
+    return torch.abs(pred_grams.squeeze(-1) - true_grams).mean().item()
 
 
 def per_class_precision_recall(
