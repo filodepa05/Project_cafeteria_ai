@@ -75,8 +75,12 @@ def convert_unimib2016_to_coco(raw_dir: Path, output_dir: Path) -> Path:
     
     UNIMIB2016 structure:
         raw_dir/
-        ├── annotations/          # JSON files with polygon annotations
-        └── images/               # Tray images
+        ├── train/                # Training images
+        ├── val/                  # Validation images
+        ├── test/                 # Test images
+        ├── annotationtrain.json  # Training annotations
+        ├── annotationval.json    # Validation annotations
+        └── annotationtest.json   # Test annotations
     
     Parameters
     ----------
@@ -92,11 +96,13 @@ def convert_unimib2016_to_coco(raw_dir: Path, output_dir: Path) -> Path:
     """
     print("Converting UNIMIB2016 to COCO format...")
     
-    annotations_dir = raw_dir / "annotations"
-    images_dir = raw_dir / "images"
+    # Check for annotation files at root level
+    train_ann = raw_dir / "annotationtrain.json"
+    val_ann = raw_dir / "annotationval.json"
+    test_ann = raw_dir / "annotationtest.json"
     
-    if not annotations_dir.exists():
-        print(f"Warning: Annotations directory not found at {annotations_dir}")
+    if not train_ann.exists():
+        print(f"Warning: Training annotations not found at {train_ann}")
         return None
     
     # COCO structure
@@ -109,78 +115,87 @@ def convert_unimib2016_to_coco(raw_dir: Path, output_dir: Path) -> Path:
     img_id = 1
     ann_id = 1
     
-    # Get all annotation files
-    ann_files = list(annotations_dir.glob("*.json"))
+    # Process train, val, and test splits
+    splits = [
+        ("train", train_ann, raw_dir / "train"),
+        ("val", val_ann, raw_dir / "val"),
+        ("test", test_ann, raw_dir / "test"),
+    ]
     
-    for ann_file in tqdm(ann_files, desc="Processing UNIMIB2016"):
-        try:
-            ann_data = load_json(ann_file)
-            
-            # Get image filename
-            img_filename = ann_data.get("image", ann_file.stem + ".jpg")
-            img_path = images_dir / img_filename
-            
-            if not img_path.exists():
-                # Try common extensions
-                for ext in [".jpg", ".jpeg", ".png"]:
-                    alt_path = images_dir / (ann_file.stem + ext)
-                    if alt_path.exists():
-                        img_path = alt_path
-                        break
-            
-            if not img_path.exists():
-                print(f"Warning: Image not found for {ann_file}")
-                continue
-            
-            # Get image size
-            img_width, img_height = get_image_size(img_path)
-            
-            # Add image
-            coco["images"].append({
-                "id": img_id,
-                "file_name": img_filename,
-                "width": img_width,
-                "height": img_height,
-            })
-            
-            # Process annotations
-            for obj in ann_data.get("annotations", []):
-                label = obj.get("label", "").lower().replace(" ", "_")
-                polygon = obj.get("polygon", [])
-                
-                # Map to Filo class
-                filo_class_id = get_filo_class_id(label, UNIMIB_TO_FILO)
-                if filo_class_id is None:
-                    continue  # Skip unmapped classes
-                
-                # Convert polygon to bbox
-                if polygon:
-                    bbox = polygon_to_bbox([polygon])
-                else:
-                    # Fallback: use image bounds
-                    bbox = [0, 0, img_width, img_height]
-                
-                # Estimate portion (UNIMIB doesn't have portions, use default)
-                portion_grams = 150.0
-                
-                coco["annotations"].append({
-                    "id": ann_id,
-                    "image_id": img_id,
-                    "category_id": filo_class_id,
-                    "bbox": bbox,  # [x, y, w, h]
-                    "portion_grams": portion_grams,
-                })
-                ann_id += 1
-            
-            # Copy image to processed directory
-            dst_img_path = output_dir / "images" / img_filename
-            copy_image(img_path, dst_img_path)
-            
-            img_id += 1
-            
-        except Exception as e:
-            print(f"Error processing {ann_file}: {e}")
+    for split_name, ann_file, img_dir in splits:
+        if not ann_file.exists():
+            print(f"Skipping {split_name} - annotation file not found")
             continue
+        
+        if not img_dir.exists():
+            print(f"Skipping {split_name} - image directory not found")
+            continue
+        
+        print(f"Processing {split_name} split...")
+        ann_data = load_json(ann_file)
+        
+        # Process each image in the annotation file
+        for img_key, img_info in tqdm(ann_data.items(), desc=f"Processing {split_name}"):
+            # Get image filename
+            img_filename = img_info.get("img_name", f"{img_key}.jpg")
+            img_path = img_dir / img_filename
+            
+            if not img_path.exists():
+                # Try without extension
+                img_path = img_dir / img_key
+                if not img_path.exists():
+                    continue
+            
+            try:
+                # Get image size
+                img_width, img_height = get_image_size(img_path)
+                
+                # Add image
+                coco["images"].append({
+                    "id": img_id,
+                    "file_name": img_filename,
+                    "width": img_width,
+                    "height": img_height,
+                })
+                
+                # Process annotations for this image
+                for obj in img_info.get("objects", []):
+                    label = obj.get("category", "").lower().replace(" ", "_")
+                    polygon = obj.get("polygon", [])
+                    
+                    # Map to Filo class
+                    filo_class_id = get_filo_class_id(label, UNIMIB_TO_FILO)
+                    if filo_class_id is None:
+                        continue  # Skip unmapped classes
+                    
+                    # Convert polygon to bbox
+                    if polygon:
+                        bbox = polygon_to_bbox([polygon])
+                    else:
+                        # Fallback: use image bounds
+                        bbox = [0, 0, img_width, img_height]
+                    
+                    # Estimate portion (UNIMIB doesn't have portions, use default)
+                    portion_grams = 150.0
+                    
+                    coco["annotations"].append({
+                        "id": ann_id,
+                        "image_id": img_id,
+                        "category_id": filo_class_id,
+                        "bbox": bbox,  # [x, y, w, h]
+                        "portion_grams": portion_grams,
+                    })
+                    ann_id += 1
+                
+                # Copy image to processed directory
+                dst_img_path = output_dir / "images" / img_filename
+                copy_image(img_path, dst_img_path)
+                
+                img_id += 1
+                
+            except Exception as e:
+                print(f"Error processing {img_filename}: {e}")
+                continue
     
     # Save COCO JSON
     output_path = output_dir / "unimib2016_coco.json"
@@ -188,7 +203,6 @@ def convert_unimib2016_to_coco(raw_dir: Path, output_dir: Path) -> Path:
     
     print(f"UNIMIB2016: {len(coco['images'])} images, {len(coco['annotations'])} annotations")
     return output_path
-
 
 def convert_food101_to_coco(raw_dir: Path, output_dir: Path, max_images_per_class: int = 100) -> Path:
     """Convert Food-101 to COCO format.

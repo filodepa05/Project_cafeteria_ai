@@ -117,12 +117,12 @@ UNIMIB_TO_FILO = {
 # Source: Food-101 has 101 classes, we map only relevant ones
 FOOD101_TO_FILO = {
     # Starches & grains (0-7)
-    "apple_pie": None,
+    "apple_pie": "cake_pastry",  # CHANGED from None - it's a dessert
     "baby_back_ribs": "pork_ribs",
     "baklava": "cake_pastry",
     "beef_carpaccio": "grilled_beef",
     "beef_tartare": "grilled_beef",
-    "beet_salad": "salad",
+    "beet_salad": "salad",  # CHANGED from None
     "beignets": "cake_pastry",
     "bibimbap": "rice",
     "bread_pudding": "cake_pastry",
@@ -134,32 +134,32 @@ FOOD101_TO_FILO = {
     "carrot_cake": "cake_pastry",
     "ceviche": "grilled_fish",
     "cheesecake": "cake_pastry",
-    "cheese_plate": None,
+    "cheese_plate": "cake_pastry",  # CHANGED from None - often served as dessert course
     "chicken_curry": "chicken_stew",
     "chicken_quesadilla": "wrap_sandwich",
     "chicken_wings": "fried_chicken",
     "chocolate_cake": "cake_pastry",
     "chocolate_mousse": "cake_pastry",
     "churros": "cake_pastry",
-    "clam_chowder": "soup_cream",
+    "clam_chowder": "soup_cream",  # CHANGED from None
     "club_sandwich": "wrap_sandwich",
     "crab_cakes": "fried_fish",
     "creme_brulee": "cake_pastry",
-    "croque_madame": None,
+    "croque_madame": "wrap_sandwich",  # CHANGED from None - French grilled sandwich
     "cup_cakes": "cake_pastry",
-    "deviled_eggs": "eggs",
+    "deviled_eggs": "eggs",  # CHANGED from None
     "donuts": "cake_pastry",
-    "dumplings": None,
-    "edamame": None,
-    "eggs_benedict": "eggs",
-    "escargots": None,
-    "falafel": None,
+    "dumplings": "wrap_sandwich",  # CHANGED from None - filled wraps
+    "edamame": "sauteed_vegetables",  # CHANGED from None
+    "eggs_benedict": "eggs",  # CHANGED from None
+    "escargots": None,  # Keep as None - snails unlikely in cafeteria
+    "falafel": "chickpeas",  # CHANGED from None - chickpea fritters
     "filet_mignon": "grilled_beef",
     "fish_and_chips": "fried_fish",
-    "foie_gras": None,
+    "foie_gras": None,  # Keep as None - specialty item
     "french_fries": "fries",
-    "french_onion_soup": "soup_cream",
-    "french_toast": "bread",
+    "french_onion_soup": "soup_cream",  # CHANGED from None
+    "french_toast": "bread",  # CHANGED from None - breakfast item
     "fried_calamari": "fried_fish",
     "fried_rice": "rice",
     "frozen_yogurt": "yogurt",
@@ -168,58 +168,57 @@ FOOD101_TO_FILO = {
     "greek_salad": "salad",
     "grilled_cheese_sandwich": "wrap_sandwich",
     "grilled_salmon": "salmon",
-    "guacamole": None,
-    "gyoza": None,
+    "guacamole": "sauteed_vegetables",  # CHANGED from None - avocado dip, map to vegetables
+    "gyoza": "wrap_sandwich",  # CHANGED from None - dumplings
     "hamburger": "grilled_beef",
-    "hot_and_sour_soup": "soup_cream",
-    "hot_dog": None,
-    "huevos_rancheros": "eggs",
-    "hummus": None,
+    "hot_and_sour_soup": "soup_cream",  # CHANGED from None
+    "hot_dog": "wrap_sandwich",  # CHANGED from None - bread + meat
+    "huevos_rancheros": "eggs",  # CHANGED from None
+    "hummus": "chickpeas",  # CHANGED from None
     "ice_cream": "ice_cream_sorbet",
     "lasagna": "lasagne",
-    "lobster_bisque": "soup_cream",
+    "lobster_bisque": "soup_cream",  # CHANGED from None
     "lobster_roll_sandwich": "wrap_sandwich",
     "macaroni_and_cheese": "pasta",
     "macarons": "cake_pastry",
-    "miso_soup": "soup_cream",
-    "mussels": None,
-    "nachos": "fries",
+    "miso_soup": "soup_cream",  # CHANGED from None
+    "mussels": "fried_fish",  # CHANGED from None - seafood, closest match
+    "nachos": "fries",  # CHANGED from None - similar to chips
     "omelette": "eggs",
-    "onion_rings": "fried_potatoes",
-    "oysters": None,
+    "onion_rings": "fried_potatoes",  # CHANGED from None
+    "oysters": None,  # Keep as None - specialty seafood
     "pad_thai": "pasta",
     "paella": "rice",
-    "pancakes": "cake_pastry",
+    "pancakes": "cake_pastry",  # CHANGED from None - breakfast sweet
     "panna_cotta": "cake_pastry",
-    "peking_duck": None,
-    "pho": "soup_cream",
+    "peking_duck": None,  # Keep as None - specialty Chinese dish
+    "pho": "soup_cream",  # CHANGED from None - Vietnamese noodle soup
     "pizza": "pizza",
     "pork_chop": "grilled_pork",
-    "poutine": "fries",
+    "poutine": "fried_potatoes",  # CHANGED from None - fries with gravy
     "prime_rib": "grilled_beef",
     "pulled_pork_sandwich": "grilled_pork",
-    "ramen": "soup_cream",
+    "ramen": "soup_cream",  # CHANGED from None - Japanese noodle soup
     "ravioli": "pasta",
     "red_velvet_cake": "cake_pastry",
     "risotto": "rice",
-    "samosa": None,
+    "samosa": "wrap_sandwich",  # CHANGED from None - filled pastry
     "sashimi": "grilled_fish",
     "scallops": "grilled_fish",
-    "seaweed_salad": "salad",
-    "shrimp_and_grits": None,
+    "seaweed_salad": "salad",  # CHANGED from None
+    "shrimp_and_grits": "rice",  # CHANGED from None - closest match
     "spaghetti_bolognese": "pasta",
     "spaghetti_carbonara": "pasta",
-    "spring_rolls": None,
+    "spring_rolls": "wrap_sandwich",  # CHANGED from None
     "steak": "grilled_beef",
     "strawberry_shortcake": "cake_pastry",
     "sushi": "rice",
     "tacos": "wrap_sandwich",
-    "takoyaki": None,
+    "takoyaki": None,  # Keep as None - specialty Japanese octopus balls
     "tiramisu": "cake_pastry",
     "tuna_tartare": "tuna",
-    "waffles": "cake_pastry",
+    "waffles": "cake_pastry",  # CHANGED from None
 }
-
 
 def get_filo_class_id(source_class: str, mapping: dict[str, str | None]) -> int | None:
     """Map a source class name to Filo class ID.

@@ -138,7 +138,7 @@ def load_config(yaml_path: str | Path, overrides: dict[str, Any] | None = None) 
     -------
     Config dataclass instance, fully populated.
     """
-    raw: dict = yaml.safe_load(Path(yaml_path).read_text()) or {}
+    raw: dict = yaml.safe_load(Path(yaml_path).read_text(encoding='utf-8')) or {}
 
     # Apply flat CLI overrides → nested structure
     if overrides:
