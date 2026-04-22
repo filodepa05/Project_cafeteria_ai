@@ -14,7 +14,7 @@ data:
 model:
   backbone: "resnet50"
   pretrained: true
-  num_classes: 10
+  num_classes: 43
   portion_hidden: 256
 
 # ── Training ──────────────────────────────────────────

@@ -8,6 +8,7 @@ data:
 model:
   backbone: "resnet18"
   pretrained: false
+  num_classes: 43
 
 training:
   epochs: 2

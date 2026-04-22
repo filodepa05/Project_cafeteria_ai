@@ -17,7 +17,7 @@ Annotation schema (extends COCO):
       "portion_grams": 185.0        # ← custom field
     }
   ],
-  "categories": [{"id": 0, "name": "banana"}, ...]
+  "categories": [{"id": 0, "name": "pasta"}, ...]
 }
 """
 
@@ -37,12 +37,98 @@ from src.config import Config
 
 
 # ── FOOD CATEGORIES (order matters — index = class id) ────────────
+#
+# Derived from:
+#   • IE Tower weekly rotating menu (Oct 2024)
+#   • Do Eat! cafeteria menu (María de Molina)
+#   • Campus Segovia Eurest menu (Autumn 2023)
+#   • UNIMIB2016 class overlap (for training data coverage)
+#
+# Naming conventions:
+#   - Generic preparation names, not recipe names
+#     ("grilled_chicken" not "pollo_al_ajillo")
+#   - Snake_case, ASCII only
+#   - 43 classes total
+#
 CATEGORIES: list[str] = [
-    "banana", "apple", "sandwich", "orange", "broccoli",
-    "carrot", "hot_dog", "pizza", "donut", "cake",
+    # ── Starches & grains (0–7) ───────────────────────────────────
+    "pasta",            # 0  tallarines, farfalle, fusilli, penne, macaroni, spaghetti, ravioli
+    "rice",             # 1  basmati, arroz con pollo, risotto, paella, arroz tres delicias
+    "pizza",            # 2  margherita, quattro formaggi, BBQ, arugula, pan pizza
+    "bread",            # 3  baguette, pan, crusty bread
+    "fries",            # 4  patatas fritas thin-cut (fast food style)
+    "couscous",         # 5  taboulé, cous-cous de verduras, cous-cous de garbanzos
+    "potatoes",         # 6  boiled / mashed / stewed potatoes, patatas con carne
+    "wrap_sandwich",    # 7  wrap, burrito, sandwich, bocadillo, tortilla wrap
+
+    # ── Poultry (8–11) ────────────────────────────────────────────
+    "grilled_chicken",  # 8  pechuga plancha, contramuslos grill, pollo al ajillo
+    "fried_chicken",    # 9  pollo empanado, alitas fritas, chicken burger
+    "chicken_stew",     # 10 pollo guisado, pollo a la moruna, arroz con pollo
+    "turkey",           # 11 chuleta de pavo, muslos de pavo, pavo a la catalana
+
+    # ── Beef & pork (12–16) ───────────────────────────────────────
+    "grilled_beef",     # 12 entrecot, entraña grill, filete de ternera plancha
+    "beef_stew",        # 13 ragout de ternera, goulash, ternera con verduras, chili con carne
+    "meatballs",        # 14 albóndigas al curry, albóndigas con setas
+    "grilled_pork",     # 15 secreto ibérico, solomillo de cerdo, lomo plancha, chuletas
+    "pork_ribs",        # 16 costilla caramelizada, costillas horneadas
+
+    # ── Fish (17–22) ──────────────────────────────────────────────
+    "salmon",           # 17 salmón grill, salmón al eneldo, salmón papillote
+    "hake",             # 18 merluza plancha, merluza cajún, merluza crujiente
+    "tuna",             # 19 emperador plancha, atún miel-mostaza, atún a la plancha
+    "cod",              # 20 bacalao rebozado, bacalao ali-oli, bacalao gratinado
+    "grilled_fish",     # 21 generic grilled white fish: perca, lubina, rodaballo, rape
+    "fried_fish",       # 22 pescaditos fritos, adobito empanado, calamares andaluza
+
+    # ── Eggs (23) ─────────────────────────────────────────────────
+    "eggs",             # 23 huevos fritos, tortilla francesa, revuelto, huevos rotos
+
+    # ── Legumes & pulses (24–25) ──────────────────────────────────
+    "lentils",          # 24 lentejas estofadas, salteado arroz y lentejas, mujadara
+    "chickpeas",        # 25 chana masala, garbanzos al curry, cous-cous de garbanzos
+
+    # ── Vegetables (26–31) ────────────────────────────────────────
+    "salad",            # 26 ensalada mixta, caesar, ensalada de la casa, ensalada vitaminica
+    "soup_cream",       # 27 crema de champiñones, crema de calabaza, velouté, sopa de tomate
+    "grilled_vegetables", # 28 pimientos asados, calabacines asados, tomates asados, ratatouille
+    "sauteed_vegetables", # 29 judías verdes salteadas, guisantes salteados, setas al ajillo
+    "broccoli",         # 30 brócoli gratinado, brócoli chowder, crema de brócoli
+    "stuffed_peppers",  # 31 pimientos rellenos de atún, pimientos rellenos vegetarianos
+
+    # ── Poke & bowls (32) ─────────────────────────────────────────
+    "poke_bowl",        # 32 poke bowl de atún, poke bowl de salmón (Do Eat)
+
+    # ── Lasagne & baked pasta (33) ────────────────────────────────
+    "lasagne",          # 33 lasaña de carne, lasaña vegetal, canelones, musaka
+
+    # ── Fruit (34–35) ─────────────────────────────────────────────
+    "fresh_fruit",      # 34 fruta fresca, vaso de fruta variada (dessert option every day)
+    "fruit_salad",      # 35 macedonia de frutas, ensalada de frutas
+
+    # ── Dairy & desserts (36–38) ──────────────────────────────────
+    "yogurt",           # 36 yogurt natural, natillas, lácteos (daily dessert option)
+    "cake_pastry",      # 37 tarta, brownie, milhojas, profiteroles, croissant, muffin, cookie
+    "ice_cream_sorbet", # 38 sorbete, batido de fruta, helado
+
+    # ── Drinks (39) ───────────────────────────────────────────────
+    "juice_drink",      # 39 zumo, smoothie, zumo vitamínico (Do Eat / IE Tower)
+
+    # ── Always-present IE staples (40–42) ─────────────────────────
+    "rotisserie_chicken",  # 40 pollo asado entero al horno / pollo al ast — whole roasted bird,
+                           #    visually distinct from grilled breast or stew (golden skin, full carcass)
+    "fried_potatoes",      # 41 patatas bravas, patatas rústicas fritas, thick-cut wedges —
+                           #    chunkier & crispier than fries (class 4)
+    "baked_potatoes",      # 42 patatas rústicas al horno, patatas gratinadas, patatas panaderas —
+                           #    oven-roasted, drier surface, no deep-fry colour
 ]
 
+# Reverse lookup: name → class id
 CAT_TO_IDX: dict[str, int] = {c: i for i, c in enumerate(CATEGORIES)}
+
+# Total number of classes — use this instead of hardcoding 40
+NUM_CLASSES: int = len(CATEGORIES)   # 40
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -122,7 +208,7 @@ class TrayDataset(Dataset):
 class SyntheticTrayDataset(Dataset):
     """Generates random images + fake annotations.  No files needed."""
 
-    def __init__(self, n_samples: int = 32, image_size: int = 224, num_classes: int = 10):
+    def __init__(self, n_samples: int = 32, image_size: int = 224, num_classes: int = NUM_CLASSES):
         self.n = n_samples
         self.size = image_size
         self.num_classes = num_classes
