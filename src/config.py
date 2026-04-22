@@ -71,6 +71,13 @@ class DebugConfig:
     synthetic_samples: int = 32
 
 
+@dataclass
+class NutritionConfig:
+    usda_api_key: str | None = None
+    cache_path: str = "data/nutrition_cache.json"
+    use_api: bool = True
+
+
 # ── Root config ───────────────────────────────────────────────────
 
 @dataclass
@@ -81,6 +88,7 @@ class Config:
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    nutrition: NutritionConfig = field(default_factory=NutritionConfig)
     _debug: DebugConfig = field(default_factory=DebugConfig)
 
     # ── Serialisation ─────────────────────────────────────────────
@@ -101,6 +109,7 @@ _SUB_MAP: dict[str, type] = {
     "inference": InferenceConfig,
     "checkpoint": CheckpointConfig,
     "logging": LoggingConfig,
+    "nutrition": NutritionConfig,
     "_debug": DebugConfig,
 }
 

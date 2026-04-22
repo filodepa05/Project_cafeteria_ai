@@ -27,10 +27,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
-from torchvision import transforms as T
 from PIL import Image
 
 from src.config import Config
@@ -128,7 +129,42 @@ CATEGORIES: list[str] = [
 CAT_TO_IDX: dict[str, int] = {c: i for i, c in enumerate(CATEGORIES)}
 
 # Total number of classes — use this instead of hardcoding 40
-NUM_CLASSES: int = len(CATEGORIES)   # 40
+NUM_CLASSES: int = len(CATEGORIES)   # 43
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Albumentations transforms
+# ═══════════════════════════════════════════════════════════════════
+
+def get_train_transforms(image_size: int = 640) -> A.Compose:
+    """Training transforms with augmentation using albumentations.
+    
+    Includes:
+    - Random horizontal flip
+    - Color jitter (brightness, contrast, saturation)
+    - Random crop
+    - Rotation
+    """
+    return A.Compose([
+        A.Resize(image_size, image_size),
+        A.HorizontalFlip(p=0.5),
+        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
+        A.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05, p=0.3),
+        A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.3),
+        A.RandomCrop(height=int(image_size * 0.9), width=int(image_size * 0.9), p=0.3),
+        A.Resize(image_size, image_size),  # Resize back after crop
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ToTensorV2(),
+    ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels', 'portions']))
+
+
+def get_val_transforms(image_size: int = 640) -> A.Compose:
+    """Validation transforms without augmentation."""
+    return A.Compose([
+        A.Resize(image_size, image_size),
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ToTensorV2(),
+    ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels', 'portions']))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -147,12 +183,7 @@ class TrayDataset(Dataset):
         self.root = Path(root)
         self.image_dir = self.root / "images"
         self.image_size = image_size
-        self.transform = transform or T.Compose([
-            T.Resize((image_size, image_size)),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225]),
-        ])
+        self.transform = transform
 
         ann_path = self.root / "annotations.json"
         if not ann_path.exists():
@@ -177,27 +208,60 @@ class TrayDataset(Dataset):
         img_info = self.images[idx]
         img_path = self.image_dir / img_info["file_name"]
         img = Image.open(img_path).convert("RGB")
+        img_array = np.array(img)
 
-        orig_w, orig_h = img.size
-        img_tensor = self.transform(img)
+        orig_h, orig_w = img_array.shape[:2]
 
-        # Scale bboxes to resized coordinates
-        sx = self.image_size / orig_w
-        sy = self.image_size / orig_h
-
+        # Get annotations
         anns = self._anns_by_image.get(img_info["id"], [])
         boxes, labels, portions = [], [], []
         for ann in anns:
             x, y, w, h = ann["bbox"]
-            boxes.append([x * sx, y * sy, (x + w) * sx, (y + h) * sy])  # xyxy
+            boxes.append([x, y, x + w, y + h])  # xyxy format for albumentations
             labels.append(ann["category_id"])
             portions.append(ann.get("portion_grams", 100.0))
 
+        # Apply transforms
+        if self.transform is not None:
+            transformed = self.transform(
+                image=img_array,
+                bboxes=boxes,
+                labels=labels,
+                portions=portions,
+            )
+            img_tensor = transformed["image"]
+            boxes = transformed["bboxes"]
+            labels = transformed["labels"]
+            portions = transformed["portions"]
+        else:
+            # Default: just resize and normalize
+            transform = get_val_transforms(self.image_size)
+            transformed = transform(
+                image=img_array,
+                bboxes=boxes,
+                labels=labels,
+                portions=portions,
+            )
+            img_tensor = transformed["image"]
+            boxes = transformed["bboxes"]
+            labels = transformed["labels"]
+            portions = transformed["portions"]
+
+        # Handle empty boxes after augmentation
+        if len(boxes) == 0:
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
+            labels = torch.zeros(0, dtype=torch.long)
+            portions = torch.zeros(0, dtype=torch.float32)
+        else:
+            boxes = torch.tensor(boxes, dtype=torch.float32)
+            labels = torch.tensor(labels, dtype=torch.long)
+            portions = torch.tensor(portions, dtype=torch.float32)
+
         return {
             "image": img_tensor,
-            "boxes": torch.tensor(boxes, dtype=torch.float32),
-            "labels": torch.tensor(labels, dtype=torch.long),
-            "portions": torch.tensor(portions, dtype=torch.float32),
+            "boxes": boxes,
+            "labels": labels,
+            "portions": portions,
         }
 
 
@@ -266,11 +330,17 @@ def build_dataloaders(cfg: Config) -> tuple[DataLoader, DataLoader]:
         full_ds = TrayDataset(
             root=cfg.data.root,
             image_size=cfg.data.image_size,
+            transform=None,  # Will be set after split
         )
 
     n_train = int(len(full_ds) * cfg.data.train_split)
     n_val = len(full_ds) - n_train
     train_ds, val_ds = random_split(full_ds, [n_train, n_val])
+
+    # Apply different transforms to train and val
+    # Access the underlying dataset through .dataset attribute
+    train_ds.dataset.transform = get_train_transforms(cfg.data.image_size)
+    val_ds.dataset.transform = get_val_transforms(cfg.data.image_size)
 
     shared = dict(
         collate_fn=collate_fn,

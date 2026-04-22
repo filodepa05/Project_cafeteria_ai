@@ -47,6 +47,12 @@ logging:
   log_every_n_steps: 20
   use_rich: true
 
+# ── Nutrition API ─────────────────────────────────────
+nutrition:
+  usda_api_key: null  # Set via USDA_API_KEY environment variable
+  cache_path: "data/nutrition_cache.json"
+  use_api: true  # Set to false to always use hardcoded values
+
 # ── Debug ─────────────────────────────────────────────
 _debug:
   use_synthetic: false
