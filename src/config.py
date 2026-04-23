@@ -27,7 +27,7 @@ class DataConfig:
 class ModelConfig:
     backbone: str = "resnet50"
     pretrained: bool = True
-    num_classes: int = 10
+    num_classes: int = 43
     portion_hidden: int = 256
 
 

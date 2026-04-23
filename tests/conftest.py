@@ -15,7 +15,7 @@ def debug_config(tmp_path) -> Config:
     """A minimal config for fast unit tests."""
     return Config(
         data=DataConfig(image_size=64, num_workers=0, pin_memory=False),
-        model=ModelConfig(backbone="resnet18", pretrained=False, num_classes=10, portion_hidden=32),
+        model=ModelConfig(backbone="resnet18", pretrained=False, num_classes=43, portion_hidden=32),
         _debug=DebugConfig(use_synthetic=True, synthetic_samples=8),
     )
 
@@ -28,6 +28,6 @@ def model(debug_config) -> TrayModel:
 @pytest.fixture
 def synthetic_batch(debug_config) -> dict:
     """A single collated batch of 4 synthetic samples."""
-    ds = SyntheticTrayDataset(n_samples=4, image_size=64, num_classes=10)
+    ds = SyntheticTrayDataset(n_samples=4, image_size=64, num_classes=43)
     samples = [ds[i] for i in range(4)]
     return collate_fn(samples)

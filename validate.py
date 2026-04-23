@@ -1,4 +1,4 @@
-﻿"""Quick validation script - checks if your repo is set up correctly."""
+"""Quick validation script - checks if your repo is set up correctly."""
 
 def main():
     print("\n" + "="*60)

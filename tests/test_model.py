@@ -9,7 +9,7 @@ def test_forward_shapes(model):
     x = torch.randn(2, 3, 64, 64)
     out = model(x)
 
-    assert out["logits"].shape == (2, 10)
+    assert out["logits"].shape == (2, 43)
     assert out["grams"].shape == (2, 1)
     assert out["features"].shape[0] == 2
 
@@ -37,7 +37,7 @@ def test_checkpoint_roundtrip(model, tmp_path):
     torch.save({"model_state_dict": model.state_dict()}, ckpt_path)
 
     from src.config import ModelConfig
-    loaded = TrayModel(ModelConfig(backbone="resnet18", pretrained=False, num_classes=10, portion_hidden=32))
+    loaded = TrayModel(ModelConfig(backbone="resnet18", pretrained=False, num_classes=43, portion_hidden=32))
     ckpt = torch.load(ckpt_path, weights_only=False)
     loaded.load_state_dict(ckpt["model_state_dict"])
     loaded.eval()

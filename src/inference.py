@@ -179,22 +179,15 @@ class TrayInferencePipeline:
         ]
 
     # ── Stage 2: nutrition lookup ─────────────────────────────────
-
     def _get_nutrition(self, label: str, grams: float) -> dict:
-        """Get macronutrients for a food item at a given portion size.
-
-        JP's nutrition_api.estimate_nutrition(food_name, grams) takes a
-        string label and returns a NutritionInfo dataclass — same interface
-        as the hardcoded fallback but with live USDA data.
-        """
         try:
-            result = self.nutrition_fn(label, grams)
+            class_id = CATEGORIES.index(label) if label in CATEGORIES else -1
+            result = self.nutrition_fn(class_id, grams)  # now passes 2, not "pizza"
         except (TypeError, KeyError, Exception):
-            # Hard fallback: use class_id with hardcoded table
             class_id = CATEGORIES.index(label) if label in CATEGORIES else -1
             result = estimate_nutrition_fallback(class_id, grams)
         return result.to_dict()
-
+    
     # ── Portion estimation from bbox ──────────────────────────────
 
     @staticmethod
