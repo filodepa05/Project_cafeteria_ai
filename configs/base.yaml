@@ -35,6 +35,10 @@ inference:
   nms_iou_threshold: 0.50
   device: "auto"
 
+# ── YOLO detector ─────────────────────────────────────
+yolo:
+  weights_path: "weights/yolo_best.pt"
+
 # ── Checkpointing ─────────────────────────────────────
 checkpoint:
   save_dir: "checkpoints"
