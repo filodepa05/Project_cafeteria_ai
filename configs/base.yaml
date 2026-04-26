@@ -4,15 +4,15 @@
 
 # ── Data ──────────────────────────────────────────────
 data:
-  root: "data"
-  image_size: 640
+  root: "data/processed"
+  image_size: 224
   train_split: 0.8
-  num_workers: 4
+  num_workers: 0
   pin_memory: true
 
 # ── Model ─────────────────────────────────────────────
 model:
-  backbone: "resnet50"
+  backbone: "resnet18"
   pretrained: true
   num_classes: 43
   portion_hidden: 256
@@ -56,4 +56,4 @@ nutrition:
 # ── Debug ─────────────────────────────────────────────
 _debug:
   use_synthetic: false
-  synthetic_samples: 32
+  synthetic_samples: 64
