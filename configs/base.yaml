@@ -35,6 +35,10 @@ inference:
   nms_iou_threshold: 0.50
   device: "auto"
 
+# ── YOLO detector ─────────────────────────────────────
+yolo:
+  weights_path: "weights/yolo_best.pt"
+
 # ── Checkpointing ─────────────────────────────────────
 checkpoint:
   save_dir: "checkpoints"
@@ -56,4 +60,8 @@ nutrition:
 # ── Debug ─────────────────────────────────────────────
 _debug:
   use_synthetic: false
+<<<<<<< HEAD
   synthetic_samples: 64
+=======
+  synthetic_samples: 32
+>>>>>>> f9fa0840318e37bed8b8e292d3ce8361d805ca55
