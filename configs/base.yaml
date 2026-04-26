@@ -14,7 +14,7 @@ data:
 model:
   backbone: "resnet18"
   pretrained: true
-  num_classes: 43
+  num_classes: 44
   portion_hidden: 256
 
 # ── Training ──────────────────────────────────────────
