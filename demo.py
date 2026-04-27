@@ -1,56 +1,84 @@
 """
 demo.py – Smart Tray · Pitch Demo
-py demo.py  →  http://127.0.0.1:7860
+
+Usage:
+    py demo.py
+    py demo.py --checkpoint checkpoints/epoch_030_loss_0.2145.pt
+    py demo.py --no-share
+    py demo.py --port 8080
 """
 
+import argparse
+import base64
+import io
 from pathlib import Path
+
 import gradio as gr
-from PIL import Image, ImageDraw, ImageFont
-from src.config import load_config
-from src.dataset import CATEGORIES
-from src.nutrition import estimate_nutrition
-from src.nlp_summary import generate_summary
-from src.models.tray_model import TrayModel
-from src.utils.io import resolve_device
 import torch
+from PIL import Image, ImageDraw, ImageFont
 from torchvision import transforms as T
 
+from src.config import load_config
+from src.dataset import CATEGORIES
+from src.models.tray_model import TrayModel
+from src.nlp_summary import generate_summary
+from src.nutrition import estimate_nutrition
+from src.utils.io import resolve_device
+
+# ── CLI ───────────────────────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("--checkpoint", type=str, default=None)
+parser.add_argument("--config",     type=str, default="configs/base.yaml")
+parser.add_argument("--no-share",   action="store_true")
+parser.add_argument("--port",       type=int, default=7860)
+args = parser.parse_args()
+
+CFG = load_config(args.config)
+DEV = resolve_device(CFG.inference.device)
+
+print("\n" + "=" * 55)
+print("  SmartTray · Starting up")
+print("=" * 55)
+print(f"  Device  : {DEV}")
+
+# ── YOLO ─────────────────────────────────────────────────────────
+YOLO = None
 try:
     from src.models.yolo_detector import YOLOFoodDetector
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-
-CFG  = load_config("configs/base.yaml")
-DEV  = resolve_device(CFG.inference.device)
-RESNET = TrayModel(CFG.model).to(DEV)
-RESNET.eval()
-
-YOLO = None
-if YOLO_AVAILABLE:
     w = Path(CFG.yolo.weights_path)
     if w.exists():
-        try:
-            YOLO = YOLOFoodDetector(str(w),
-                conf_threshold=CFG.inference.confidence_threshold,
-                iou_threshold=CFG.inference.nms_iou_threshold)
-            print(f"YOLO loaded ✓")
-        except Exception as e:
-            print(f"YOLO failed: {e}")
+        YOLO = YOLOFoodDetector(str(w),
+            conf_threshold=CFG.inference.confidence_threshold,
+            iou_threshold=CFG.inference.nms_iou_threshold)
+        print(f"  YOLO    : loaded  ({w.name})")
+    else:
+        print(f"  YOLO    : weights not found at {w}")
+except Exception as e:
+    print(f"  YOLO    : {e}")
 
-ckpt_dir = Path(CFG.checkpoint.save_dir)
-ckpts = sorted(ckpt_dir.glob("epoch_*_loss_*.pt")) if ckpt_dir.exists() else []
-if ckpts:
-    def _l(p):
-        try: return float(p.stem.split("loss_")[1])
-        except: return float("inf")
-    best = min(ckpts, key=_l)
+# ── ResNet ────────────────────────────────────────────────────────
+RESNET = TrayModel(CFG.model).to(DEV)
+RESNET.eval()
+resnet_loaded = False
+
+def _best_ckpt(d):
+    pts = sorted(Path(d).glob("epoch_*_loss_*.pt"))
+    if not pts: return None
+    return min(pts, key=lambda p: float(p.stem.split("loss_")[1]) if "loss_" in p.stem else 99)
+
+ckpt = Path(args.checkpoint) if args.checkpoint else _best_ckpt(CFG.checkpoint.save_dir)
+if ckpt and Path(ckpt).exists():
     try:
-        ck = torch.load(best, map_location=DEV, weights_only=False)
-        RESNET.load_state_dict(ck["model_state_dict"])
-        print(f"ResNet loaded ✓  ({best.name})")
+        sd = torch.load(ckpt, map_location=DEV, weights_only=False)
+        RESNET.load_state_dict(sd["model_state_dict"])
+        resnet_loaded = True
+        print(f"  ResNet  : loaded  ({Path(ckpt).name})")
     except Exception as e:
-        print(f"ResNet ckpt failed: {e}")
+        print(f"  ResNet  : {e}")
+else:
+    print("  ResNet  : no checkpoint — random weights")
+
+print("=" * 55 + "\n")
 
 TF = T.Compose([
     T.Resize((CFG.data.image_size, CFG.data.image_size)),
@@ -58,23 +86,33 @@ TF = T.Compose([
     T.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225]),
 ])
 
-COLORS = ["#6C63FF","#00D4AA","#FF6B6B","#FFB347","#4FC3F7",
-          "#F06292","#AED581","#FF8A65","#BA68C8","#4DB6AC"]
+DOT_COLORS = ["#2d6a4f","#40916c","#52b788","#b5813d","#9b3a2a",
+              "#1b4332","#74c69d","#6b4f2a","#40916c","#2d6a4f"]
 
 DEFAULT_GRAMS = {
-    "pasta": 250, "rice": 220, "pizza": 200, "bread": 80, "fries": 120,
-    "couscous": 200, "potatoes": 180, "wrap_sandwich": 200,
-    "grilled_chicken": 170, "fried_chicken": 180, "chicken_stew": 250,
-    "turkey": 160, "grilled_beef": 180, "beef_stew": 250, "meatballs": 200,
-    "grilled_pork": 170, "pork_ribs": 220, "salmon": 160, "hake": 160,
-    "tuna": 150, "cod": 160, "grilled_fish": 150, "fried_fish": 160,
-    "eggs": 100, "lentils": 250, "chickpeas": 220, "salad": 130,
-    "soup_cream": 280, "grilled_vegetables": 150, "sauteed_vegetables": 150,
-    "broccoli": 150, "stuffed_peppers": 200, "poke_bowl": 350,
-    "lasagne": 300, "fresh_fruit": 150, "fruit_salad": 180, "yogurt": 125,
-    "cake_pastry": 100, "ice_cream_sorbet": 120, "juice_drink": 250,
-    "rotisserie_chicken": 250, "fried_potatoes": 150, "baked_potatoes": 180,
+    "pasta":250,"rice":220,"pizza":200,"bread":80,"fries":120,
+    "couscous":200,"potatoes":180,"wrap_sandwich":200,
+    "grilled_chicken":170,"fried_chicken":180,"chicken_stew":250,
+    "turkey":160,"grilled_beef":180,"beef_stew":250,"meatballs":200,
+    "grilled_pork":170,"pork_ribs":220,"salmon":160,"hake":160,
+    "tuna":150,"cod":160,"grilled_fish":150,"fried_fish":160,
+    "eggs":100,"lentils":250,"chickpeas":220,"salad":130,
+    "soup_cream":280,"grilled_vegetables":150,"sauteed_vegetables":150,
+    "broccoli":150,"stuffed_peppers":200,"poke_bowl":350,
+    "lasagne":300,"fresh_fruit":150,"fruit_salad":180,"yogurt":125,
+    "cake_pastry":100,"ice_cream_sorbet":120,"juice_drink":250,
+    "rotisserie_chicken":250,"fried_potatoes":150,"baked_potatoes":180,
 }
+
+def _font(size=14):
+    for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+              "/System/Library/Fonts/Helvetica.ttc"]:
+        try: return ImageFont.truetype(p, size)
+        except: pass
+    return ImageFont.load_default()
+
+FONT = _font(15)
 
 @torch.no_grad()
 def run_resnet(img, thr):
@@ -82,213 +120,81 @@ def run_resnet(img, thr):
     o = RESNET(t)
     probs = torch.sigmoid(o["logits"][0]).cpu()
     g = max(30., min(float(o["grams"][0,0].cpu()), 400.))
-    return [{"label": CATEGORIES[i], "grams": round(g,1), "confidence": round(p.item(),3)}
-            for i,p in enumerate(probs) if p.item() >= thr]
+    return [{"label":CATEGORIES[i],"grams":DEFAULT_GRAMS.get(CATEGORIES[i],round(g,1)),"confidence":round(p.item(),3)}
+            for i,p in enumerate(probs) if p.item()>=thr]
 
-def run_yolo(img, threshold):
+def run_yolo(img, thr):
     out = []
     for d in YOLO.detect(img):
-        if d.confidence >= threshold:
-            x1,y1,x2,y2 = d.bbox
-            area = (x2-x1)*(y2-y1)
-            fallback = round(max(30., min(area/(img.width*img.height)*800., 400.)), 1)
-            grams = DEFAULT_GRAMS.get(d.label, fallback)
-            out.append({"label":d.label,"grams":grams,"confidence":round(d.confidence,3),"bbox":(x1,y1,x2,y2)})
+        if d.confidence < thr: continue
+        x1,y1,x2,y2 = d.bbox
+        area = max((x2-x1)*(y2-y1),1)
+        g = DEFAULT_GRAMS.get(d.label, round(max(30.,min(area/(img.width*img.height)*800.,400.)),1))
+        out.append({"label":d.label,"grams":g,"confidence":round(d.confidence,3),"bbox":(x1,y1,x2,y2)})
     return out
 
 def annotate(img, items):
     out = img.copy()
     draw = ImageDraw.Draw(out)
-    try: font = ImageFont.truetype("arial.ttf", 15)
-    except: font = ImageFont.load_default()
     for i, item in enumerate(items):
-        c = COLORS[i % len(COLORS)]
-        label = item["label"].replace("_"," ").title()
-        g = item["grams"]
+        c = DOT_COLORS[i % len(DOT_COLORS)]
+        name = item["label"].replace("_"," ").title()
         if "bbox" in item:
-            x1,y1,x2,y2 = item["bbox"]
+            x1,y1,x2,y2 = [int(v) for v in item["bbox"]]
             draw.rectangle([x1,y1,x2,y2], outline=c, width=3)
-            txt = f"{label}  ~{g:.0f}g"
+            txt = f"{name} ~{item['grams']:.0f}g"
             tw = len(txt)*8
-            draw.rectangle([x1, y1-22, x1+tw+6, y1], fill=c)
-            draw.text((x1+3, y1-20), txt, fill="white", font=font)
+            draw.rectangle([x1,y1-26,x1+tw+10,y1], fill=c)
+            draw.text((x1+5,y1-22), txt, fill="white", font=FONT)
         else:
-            yp = 10+i*26
-            txt = f"{label}  ~{g:.0f}g"
+            yp = 12+i*30
+            txt = f"{name} ~{item['grams']:.0f}g"
             tw = len(txt)*8
-            draw.rectangle([8,yp-2,16+tw,yp+20], fill=c)
-            draw.text((12,yp), txt, fill="white", font=font)
+            draw.rectangle([8,yp-2,20+tw,yp+24], fill=c)
+            draw.text((13,yp), txt, fill="white", font=FONT)
     return out
 
-def health_score(totals, n_items):
-    if n_items == 0:
-        return 0
+def img_to_b64(img):
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=92)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
-    cal   = totals["calories"]
-    prot  = totals["protein_g"]
-    fat   = totals["fat_g"]
-    carb  = totals["carbs_g"]
+def health_score(t, n):
+    if not n: return 0
+    cal,prot,fat,carb = t["calories"],t["protein_g"],t["fat_g"],t["carbs_g"]
+    s = 0
+    if 600<=cal<=900: s+=30
+    elif 300<=cal<=1200: s+=15
+    if prot>=35: s+=25
+    elif prot>=25: s+=20
+    elif prot>=15: s+=12
+    elif prot>=8: s+=5
+    fp = fat*9/cal*100 if cal>0 else 0
+    if 25<=fp<=40: s+=25
+    elif 15<=fp<=55: s+=12
+    cp = carb*4/cal*100 if cal>0 else 0
+    if 40<=cp<=55: s+=20
+    elif 20<=cp<=75: s+=10
+    return max(0,min(100,s))
 
-    score = 0
-
-    # 1. Calories (target: 600-900 kcal for a main meal)
-    if 600 <= cal <= 900:
-        score += 30
-    elif 450 <= cal < 600 or 900 < cal <= 1050:
-        score += 20
-    elif 300 <= cal < 450 or 1050 < cal <= 1200:
-        score += 10
-    else:
-        score += 0  # too low or too high
-
-    # 2. Protein (target: 25g+ for satiety and muscle)
-    if prot >= 35:
-        score += 25
-    elif prot >= 25:
-        score += 20
-    elif prot >= 15:
-        score += 12
-    elif prot >= 8:
-        score += 5
-    else:
-        score += 0
-
-    # 3. Fat ratio (target: 25-40% of calories)
-    fat_pct = (fat * 9 / cal * 100) if cal > 0 else 0
-    if 25 <= fat_pct <= 40:
-        score += 25
-    elif 20 <= fat_pct < 25 or 40 < fat_pct <= 45:
-        score += 15
-    elif 15 <= fat_pct < 20 or 45 < fat_pct <= 55:
-        score += 8
-    else:
-        score += 0  # very low fat or very high fat
-
-    # 4. Carb ratio (target: 40-55% of calories)
-    carb_pct = (carb * 4 / cal * 100) if cal > 0 else 0
-    if 40 <= carb_pct <= 55:
-        score += 20
-    elif 30 <= carb_pct < 40 or 55 < carb_pct <= 65:
-        score += 12
-    elif 20 <= carb_pct < 30 or 65 < carb_pct <= 75:
-        score += 6
-    else:
-        score += 0
-
-    return max(0, min(100, score))
-
-def score_label(s):
-    if s >= 80: return "EXCELLENT", "#00D4AA"
-    if s >= 60: return "GOOD", "#6C63FF"
-    if s >= 40: return "MODERATE", "#FFB347"
-    return "REVIEW DIET", "#FF6B6B"
-
-def build_output(items_out, totals, annotated_img):
-    s = health_score(totals, len(items_out))
-    label, color = score_label(s)
-
-    rows = ""
-    for i, item in enumerate(items_out):
-        bg = "rgba(255,255,255,0.04)" if i%2==0 else "transparent"
-        name = item["food"].replace("_"," ").title()
-        bar_w = min(100, int(item["calories"] / max(totals["calories"],1) * 100 * len(items_out)))
-        rows += f"""
-        <tr style="background:{bg}">
-          <td style="padding:10px 14px;font-weight:600;color:#f0f0f0;font-size:14px">{name}</td>
-          <td style="padding:10px 14px;text-align:center;color:#aaa;font-size:13px">{item['grams']}g</td>
-          <td style="padding:10px 14px;text-align:right;font-size:13px">
-            <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
-              <div style="width:60px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">
-                <div style="width:{bar_w}%;height:100%;background:{COLORS[i%len(COLORS)]};border-radius:2px"></div>
-              </div>
-              <span style="color:#ff8a80;font-weight:700;min-width:48px;text-align:right">{item['calories']}</span>
-            </div>
-          </td>
-          <td style="padding:10px 14px;text-align:center;color:#80d8ff;font-size:13px">{item['protein_g']}g</td>
-          <td style="padding:10px 14px;text-align:center;color:#b9f6ca;font-size:13px">{item['carbs_g']}g</td>
-          <td style="padding:10px 14px;text-align:center;color:#ffe57f;font-size:13px">{item['fat_g']}g</td>
-        </tr>"""
-
-    summary_text = generate_summary({"items": items_out, "totals": totals})
-
-    return f"""
-<div style="font-family:'Segoe UI',system-ui,sans-serif;color:#f0f0f0;padding:4px 0">
-
-  <!-- Score hero -->
-  <div style="display:flex;align-items:center;gap:24px;padding:24px 28px;
-              background:linear-gradient(135deg,#1a1040 0%,#0d1a2e 100%);
-              border-radius:16px;margin-bottom:16px;border:1px solid rgba(108,99,255,0.3)">
-    <div style="text-align:center;min-width:110px">
-      <div style="font-size:56px;font-weight:800;color:{color};line-height:1;
-                  text-shadow:0 0 40px {color}55">{s}</div>
-      <div style="font-size:10px;letter-spacing:2px;color:#888;margin-top:4px">HEALTH SCORE</div>
-    </div>
-    <div style="width:1px;height:60px;background:rgba(255,255,255,0.1)"></div>
-    <div style="flex:1">
-      <div style="font-size:22px;font-weight:700;color:{color};letter-spacing:1px">{label}</div>
-      <div style="font-size:13px;color:#aaa;margin-top:6px;line-height:1.6">{summary_text}</div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:center;min-width:200px">
-      <div style="background:rgba(255,138,128,0.1);border-radius:10px;padding:10px 8px;border:1px solid rgba(255,138,128,0.2)">
-        <div style="font-size:20px;font-weight:800;color:#ff8a80">{totals['calories']}</div>
-        <div style="font-size:10px;color:#888;letter-spacing:1px">KCAL</div>
-      </div>
-      <div style="background:rgba(128,216,255,0.1);border-radius:10px;padding:10px 8px;border:1px solid rgba(128,216,255,0.2)">
-        <div style="font-size:20px;font-weight:800;color:#80d8ff">{totals['protein_g']}g</div>
-        <div style="font-size:10px;color:#888;letter-spacing:1px">PROTEIN</div>
-      </div>
-      <div style="background:rgba(185,246,202,0.1);border-radius:10px;padding:10px 8px;border:1px solid rgba(185,246,202,0.2)">
-        <div style="font-size:20px;font-weight:800;color:#b9f6ca">{totals['carbs_g']}g</div>
-        <div style="font-size:10px;color:#888;letter-spacing:1px">CARBS</div>
-      </div>
-      <div style="background:rgba(255,229,127,0.1);border-radius:10px;padding:10px 8px;border:1px solid rgba(255,229,127,0.2)">
-        <div style="font-size:20px;font-weight:800;color:#ffe57f">{totals['fat_g']}g</div>
-        <div style="font-size:10px;color:#888;letter-spacing:1px">FAT</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Breakdown table -->
-  <div style="background:#0f0f1a;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.08)">
-    <table style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr style="border-bottom:1px solid rgba(255,255,255,0.08)">
-          <th style="padding:12px 14px;text-align:left;color:#555;font-size:11px;letter-spacing:1.5px;font-weight:600">ITEM</th>
-          <th style="padding:12px 14px;text-align:center;color:#555;font-size:11px;letter-spacing:1.5px;font-weight:600">PORTION</th>
-          <th style="padding:12px 14px;text-align:right;color:#ff8a80;font-size:11px;letter-spacing:1.5px;font-weight:600">CALORIES</th>
-          <th style="padding:12px 14px;text-align:center;color:#80d8ff;font-size:11px;letter-spacing:1.5px;font-weight:600">PROTEIN</th>
-          <th style="padding:12px 14px;text-align:center;color:#b9f6ca;font-size:11px;letter-spacing:1.5px;font-weight:600">CARBS</th>
-          <th style="padding:12px 14px;text-align:center;color:#ffe57f;font-size:11px;letter-spacing:1.5px;font-weight:600">FAT</th>
-        </tr>
-      </thead>
-      <tbody>{rows}</tbody>
-      <tfoot>
-        <tr style="border-top:1px solid rgba(255,255,255,0.08);background:rgba(108,99,255,0.08)">
-          <td style="padding:13px 14px;font-weight:700;color:white;letter-spacing:0.5px;font-size:13px">TOTAL</td>
-          <td style="padding:13px 14px;text-align:center;color:#444">—</td>
-          <td style="padding:13px 14px;text-align:right;font-weight:800;color:#ff8a80;font-size:16px">{totals['calories']}</td>
-          <td style="padding:13px 14px;text-align:center;font-weight:700;color:#80d8ff">{totals['protein_g']}g</td>
-          <td style="padding:13px 14px;text-align:center;font-weight:700;color:#b9f6ca">{totals['carbs_g']}g</td>
-          <td style="padding:13px 14px;text-align:center;font-weight:700;color:#ffe57f">{totals['fat_g']}g</td>
-        </tr>
-      </tfoot>
-    </table>
-  </div>
-</div>"""
+def score_meta(s):
+    if s>=80: return "Excellent","#2d6a4f"
+    if s>=60: return "Good","#40916c"
+    if s>=40: return "Moderate","#b5813d"
+    return "Needs work","#9b3a2a"
 
 def analyse(image, threshold, use_yolo):
     if image is None:
-        return None, "<p style='color:#555;padding:20px;font-family:Segoe UI'>Upload a tray photo to begin.</p>"
+        return EMPTY_HTML
 
     img = Image.fromarray(image).convert("RGB")
-
-    if use_yolo and YOLO is not None:
-        raw = run_yolo(img, threshold)
-    else:
-        raw = run_resnet(img, threshold)
+    raw = run_yolo(img, threshold) if (use_yolo and YOLO) else run_resnet(img, threshold)
 
     if not raw:
-        return img, "<p style='color:#555;padding:20px'>Nothing detected — try lowering the threshold.</p>"
+        return """<div style="display:flex;align-items:center;justify-content:center;min-height:300px;
+                              color:#a89880;font-size:15px;font-family:'Georgia',serif">
+                    Nothing detected — try lowering the confidence threshold
+                  </div>"""
 
     items_out, totals = [], {"calories":0.,"protein_g":0.,"carbs_g":0.,"fat_g":0.}
     for item in raw:
@@ -297,107 +203,236 @@ def analyse(image, threshold, use_yolo):
         entry = {"food":item["label"],"grams":item["grams"],
                  "calories":n.calories,"protein_g":n.protein_g,
                  "carbs_g":n.carbs_g,"fat_g":n.fat_g}
-        if "confidence" in item: entry["confidence"] = item["confidence"]
         if "bbox" in item: entry["bbox"] = item["bbox"]
         items_out.append(entry)
         for k in totals: totals[k] += entry[k]
 
-    totals = {k: round(v,1) for k,v in totals.items()}
-    annotated = annotate(img, raw)
-    html = build_output(items_out, totals, annotated)
-    return annotated, html
+    totals = {k:round(v,1) for k,v in totals.items()}
+    ann = annotate(img, raw)
+    ann_b64 = img_to_b64(ann)
+    is_yolo = any("bbox" in x for x in items_out)
+    return build_html(items_out, totals, ann_b64, is_yolo)
+
+def build_html(items, totals, ann_b64, is_yolo):
+    s = health_score(totals, len(items))
+    label, color = score_meta(s)
+    summary = generate_summary({"items":items,"totals":totals})
+    max_cal = max((x["calories"] for x in items), default=1)
+    mode_txt = "YOLO" if is_yolo else "ResNet"
+
+    rows = ""
+    for i, item in enumerate(items):
+        c = DOT_COLORS[i % len(DOT_COLORS)]
+        name = item["food"].replace("_"," ").title()
+        bw = int(item["calories"]/max_cal*100)
+        rows += f"""
+        <tr>
+          <td style="padding:12px 18px;border-bottom:1px solid #e8ddd0">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:9px;height:9px;border-radius:50%;background:{c};flex-shrink:0"></div>
+              <span style="font-weight:600;color:#2c2416;font-size:14px;font-family:'Georgia',serif">{name}</span>
+            </div>
+            <div style="color:#a89880;font-size:11px;margin-top:2px;padding-left:19px">{item['grams']}g</div>
+          </td>
+          <td style="padding:12px 18px;text-align:right;border-bottom:1px solid #e8ddd0;vertical-align:middle">
+            <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+              <div style="width:56px;height:3px;background:#e8ddd0;border-radius:2px">
+                <div style="width:{bw}%;height:100%;background:{c};border-radius:2px"></div>
+              </div>
+              <span style="color:#2d6a4f;font-weight:800;font-size:15px;min-width:44px;text-align:right;font-family:system-ui">{item['calories']}</span>
+            </div>
+          </td>
+          <td style="padding:12px 18px;text-align:center;color:#40916c;font-size:13px;font-weight:600;border-bottom:1px solid #e8ddd0;font-family:system-ui">{item['protein_g']}g</td>
+          <td style="padding:12px 18px;text-align:center;color:#b5813d;font-size:13px;font-weight:600;border-bottom:1px solid #e8ddd0;font-family:system-ui">{item['carbs_g']}g</td>
+          <td style="padding:12px 18px;text-align:center;color:#9b3a2a;font-size:13px;font-weight:600;border-bottom:1px solid #e8ddd0;font-family:system-ui">{item['fat_g']}g</td>
+        </tr>"""
+
+    return f"""
+<div style="font-family:'Georgia',serif;color:#2c2416;background:#f5f0e8;border-radius:18px;overflow:hidden;border:1px solid #ddd3c0">
+
+  <div style="position:relative">
+    <img src="{ann_b64}" style="width:100%;display:block;max-height:320px;object-fit:cover">
+    <div style="position:absolute;top:12px;left:12px;background:rgba(245,240,232,0.93);
+                border-radius:99px;padding:4px 13px;font-size:10px;letter-spacing:1.5px;
+                font-weight:700;color:#2d6a4f;font-family:system-ui">
+      {mode_txt.upper()}
+    </div>
+  </div>
+
+  <div style="padding:22px">
+
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:14px;margin-bottom:18px">
+      <div style="background:white;border-radius:14px;padding:18px 20px;text-align:center;border:1px solid #e0d5c5;min-width:112px">
+        <div style="font-size:46px;font-weight:800;color:{color};line-height:1;font-family:system-ui">{s}</div>
+        <div style="font-size:9px;letter-spacing:2px;color:#a89880;margin-top:4px;font-family:system-ui">HEALTH SCORE</div>
+        <div style="font-size:13px;font-weight:700;color:{color};margin-top:6px">{label}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:white;border:1px solid #e0d5c5;border-radius:11px;padding:12px;text-align:center">
+          <div style="font-size:21px;font-weight:800;color:#2d6a4f;font-family:system-ui">{totals['calories']}</div>
+          <div style="font-size:9px;color:#a89880;letter-spacing:1.5px;margin-top:2px;font-family:system-ui">KCAL</div>
+        </div>
+        <div style="background:white;border:1px solid #e0d5c5;border-radius:11px;padding:12px;text-align:center">
+          <div style="font-size:21px;font-weight:800;color:#40916c;font-family:system-ui">{totals['protein_g']}g</div>
+          <div style="font-size:9px;color:#a89880;letter-spacing:1.5px;margin-top:2px;font-family:system-ui">PROTEIN</div>
+        </div>
+        <div style="background:white;border:1px solid #e0d5c5;border-radius:11px;padding:12px;text-align:center">
+          <div style="font-size:21px;font-weight:800;color:#b5813d;font-family:system-ui">{totals['carbs_g']}g</div>
+          <div style="font-size:9px;color:#a89880;letter-spacing:1.5px;margin-top:2px;font-family:system-ui">CARBS</div>
+        </div>
+        <div style="background:white;border:1px solid #e0d5c5;border-radius:11px;padding:12px;text-align:center">
+          <div style="font-size:21px;font-weight:800;color:#9b3a2a;font-family:system-ui">{totals['fat_g']}g</div>
+          <div style="font-size:9px;color:#a89880;letter-spacing:1.5px;margin-top:2px;font-family:system-ui">FAT</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:white;border:1px solid #d4c9b5;border-left:4px solid #40916c;
+                border-radius:12px;padding:14px 18px;margin-bottom:18px">
+      <div style="font-size:10px;color:#40916c;letter-spacing:2px;font-weight:700;margin-bottom:7px;font-family:system-ui">AI NUTRITIONAL SUMMARY</div>
+      <div style="color:#4a3f2f;font-size:14px;line-height:1.75">{summary}</div>
+    </div>
+
+    <div style="background:white;border-radius:14px;overflow:hidden;border:1px solid #e0d5c5">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f0ebe0;border-bottom:2px solid #e0d5c5">
+            <th style="padding:11px 18px;text-align:left;font-size:10px;letter-spacing:1.5px;color:#a89880;font-weight:700;font-family:system-ui">ITEM</th>
+            <th style="padding:11px 18px;text-align:right;font-size:10px;letter-spacing:1.5px;color:#2d6a4f;font-weight:700;font-family:system-ui">KCAL</th>
+            <th style="padding:11px 18px;text-align:center;font-size:10px;letter-spacing:1.5px;color:#40916c;font-weight:700;font-family:system-ui">PROTEIN</th>
+            <th style="padding:11px 18px;text-align:center;font-size:10px;letter-spacing:1.5px;color:#b5813d;font-weight:700;font-family:system-ui">CARBS</th>
+            <th style="padding:11px 18px;text-align:center;font-size:10px;letter-spacing:1.5px;color:#9b3a2a;font-weight:700;font-family:system-ui">FAT</th>
+          </tr>
+        </thead>
+        <tbody>{rows}</tbody>
+        <tfoot>
+          <tr style="background:#f0ebe0;border-top:2px solid #e0d5c5">
+            <td style="padding:13px 18px;font-weight:700;color:#2c2416;font-size:14px">Total</td>
+            <td style="padding:13px 18px;text-align:right;font-weight:800;color:#2d6a4f;font-size:17px;font-family:system-ui">{totals['calories']}</td>
+            <td style="padding:13px 18px;text-align:center;font-weight:700;color:#40916c;font-family:system-ui">{totals['protein_g']}g</td>
+            <td style="padding:13px 18px;text-align:center;font-weight:700;color:#b5813d;font-family:system-ui">{totals['carbs_g']}g</td>
+            <td style="padding:13px 18px;text-align:center;font-weight:700;color:#9b3a2a;font-family:system-ui">{totals['fat_g']}g</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+  </div>
+</div>"""
+
+EMPTY_HTML = """
+<div style="display:flex;align-items:center;justify-content:center;min-height:420px;
+            flex-direction:column;gap:14px;background:#f5f0e8;border-radius:18px;
+            border:2px dashed #d4c9b5">
+  <div style="font-size:48px;opacity:0.2">🍽️</div>
+  <div style="color:#a89880;font-size:15px;font-family:'Georgia',serif">Upload a tray photo and click Analyse</div>
+</div>"""
 
 # ── CSS ───────────────────────────────────────────────────────────
 css = """
-body { background: #08080f !important; }
-.gradio-container {
-    background: #08080f !important;
-    max-width: 1200px !important;
-    margin: 0 auto !important;
-    padding: 20px !important;
-    font-family: 'Segoe UI', system-ui, sans-serif !important;
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap');
+
+body, .gradio-container, #root, .main, .wrap, .app {
+    background: #ede8df !important;
+    font-family: 'Lora', Georgia, serif !important;
 }
-footer { display: none !important; }
+.gradio-container { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+footer, .built-with, .svelte-1ax1toq { display: none !important; }
 
-/* Upload box */
-.gr-image { background: #0f0f1a !important; border: 1px solid rgba(108,99,255,0.3) !important; border-radius: 12px !important; }
+.gr-box, .gr-form, .gr-panel, .block, .gap, .gr-padded, div.gr-block {
+    background: transparent !important; border: none !important;
+    box-shadow: none !important; padding: 0 !important;
+}
 
-/* Analyse button */
-button.lg { background: #6C63FF !important; color: white !important; border: none !important;
-            border-radius: 10px !important; font-weight: 700 !important; font-size: 16px !important;
-            letter-spacing: 0.5px !important; transition: all 0.2s !important;
-            box-shadow: 0 0 24px rgba(108,99,255,0.4) !important; }
-button.lg:hover { background: #5a52e0 !important; transform: translateY(-1px) !important;
-                  box-shadow: 0 0 36px rgba(108,99,255,0.6) !important; }
+[data-testid="image"], .gr-image, .upload-container, .svelte-xpkpmc {
+    background: #f5f0e8 !important;
+    border: 2px dashed #c4b8a8 !important;
+    border-radius: 16px !important;
+    min-height: 320px !important;
+}
+[data-testid="image"]:hover { border-color: #40916c !important; }
 
-/* Accordion */
-.gr-accordion { background: #0f0f1a !important; border: 1px solid rgba(255,255,255,0.08) !important;
-                border-radius: 10px !important; }
+button[variant="primary"], .gr-button-primary {
+    background: #2d6a4f !important; color: #f5f0e8 !important;
+    border: none !important; border-radius: 12px !important;
+    font-weight: 700 !important; font-size: 15px !important;
+    padding: 14px 28px !important; width: 100% !important;
+    font-family: 'Lora', Georgia, serif !important;
+    transition: all 0.18s !important;
+    box-shadow: 0 4px 20px rgba(45,106,79,0.25) !important;
+}
+button[variant="primary"]:hover {
+    background: #1b4332 !important; transform: translateY(-1px) !important;
+}
 
-/* Slider */
-input[type=range] { accent-color: #6C63FF !important; }
+details, .gr-accordion {
+    background: #f5f0e8 !important; border: 1px solid #d4c9b5 !important;
+    border-radius: 12px !important;
+}
+details summary { padding: 10px 16px !important; color: #a89880 !important; font-size: 13px !important; cursor: pointer !important; }
 
-/* Labels */
-label > span { color: #666 !important; font-size: 11px !important; font-weight: 600 !important;
-               text-transform: uppercase !important; letter-spacing: 1px !important; }
+input[type=range] { accent-color: #40916c !important; }
+input[type=checkbox] { accent-color: #40916c !important; }
+label span { color: #a89880 !important; font-size: 12px !important; }
+
+.gr-html, [data-testid="html"] { background: transparent !important; border: none !important; padding: 0 !important; }
+
+.gr-examples { background: transparent !important; border: none !important; }
+.gr-examples img { border-radius: 10px !important; border: 1px solid #d4c9b5 !important; }
 """
 
 yolo_ok = YOLO is not None
 
-with gr.Blocks(title="Smart Tray") as demo:
-    gr.HTML("""
-    <div style="padding:32px 0 24px;text-align:center">
-      <div style="display:inline-flex;align-items:center;gap:10px;
-                  background:rgba(108,99,255,0.15);border:1px solid rgba(108,99,255,0.4);
-                  border-radius:999px;padding:6px 18px;font-size:12px;color:#9d97ff;
-                  letter-spacing:1.5px;font-weight:600;margin-bottom:20px">
-        AI · COMPUTER VISION · NUTRITION
+with gr.Blocks(css=css, title="SmartTray") as app:
+
+    gr.HTML(f"""
+    <div style="background:#ede8df;padding:48px 48px 32px;font-family:'Lora',Georgia,serif;border-bottom:1px solid #d4c9b5;margin-bottom:32px">
+      <div style="max-width:1200px;margin:0 auto;text-align:center">
+        <div style="font-size:clamp(42px,5vw,62px);font-weight:700;color:#1b4332;letter-spacing:-1px;line-height:1.05;margin-bottom:12px">
+          Smart<span style="color:#40916c">Tray</span>
+        </div>
+        <div style="color:#7a6a55;font-size:17px;max-width:480px;margin:0 auto 20px;line-height:1.7;font-style:italic">
+          AI system that scans cafeteria trays and estimates calories and nutrition in real time
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <span style="background:{'#d8f3dc' if yolo_ok else '#ede8df'};color:{'#1b4332' if yolo_ok else '#a89880'};border:1px solid {'#95d5b2' if yolo_ok else '#d4c9b5'};font-size:11px;padding:4px 14px;border-radius:99px;font-weight:600;letter-spacing:1px;font-family:system-ui">
+            YOLO {'active' if yolo_ok else 'unavailable'}
+          </span>
+          <span style="background:{'#d8f3dc' if resnet_loaded else '#fdf3e3'};color:{'#1b4332' if resnet_loaded else '#b5813d'};border:1px solid {'#95d5b2' if resnet_loaded else '#e8c97a'};font-size:11px;padding:4px 14px;border-radius:99px;font-weight:600;letter-spacing:1px;font-family:system-ui">
+            ResNet {'loaded' if resnet_loaded else 'random weights'}
+          </span>
+        </div>
       </div>
-      <h1 style="font-size:48px;font-weight:800;color:white;margin:0 0 12px;
-                 letter-spacing:-1.5px;line-height:1.1">
-        Smart<span style="color:#6C63FF">Tray</span>
-      </h1>
-      <p style="color:#666;font-size:16px;margin:0;max-width:500px;margin:0 auto">
-        Point a camera at any cafeteria tray. Get instant calorie and macro breakdowns — powered by computer vision.
-      </p>
     </div>
     """)
 
-    with gr.Row(equal_height=False):
-        with gr.Column(scale=1, min_width=320):
-            image_input = gr.Image(label="Upload Tray Photo", type="numpy", height=320)
-            with gr.Accordion("⚙  Options", open=False):
-                threshold = gr.Slider(0.1, 0.9,
-                    value=CFG.inference.confidence_threshold, step=0.05,
-                    label="Confidence Threshold")
-                use_yolo = gr.Checkbox(
-                    value=yolo_ok,
-                    label=f"YOLO Detector  {'✓ active' if yolo_ok else '✗ unavailable'}",
+    with gr.Row():
+        with gr.Column(scale=1):
+            image_input = gr.Image(label="", type="numpy", height=320, sources=["upload","clipboard"])
+            with gr.Accordion("Options", open=False):
+                threshold = gr.Slider(0.05, 0.9, value=CFG.inference.confidence_threshold,
+                                      step=0.05, label="Confidence threshold")
+                use_yolo = gr.Checkbox(value=yolo_ok,
+                    label=f"Use YOLO detector ({'active' if yolo_ok else 'unavailable'})",
                     interactive=yolo_ok)
-            run_btn = gr.Button("⚡  Analyse Tray", variant="primary", size="lg")
+            run_btn = gr.Button("Analyse Tray", variant="primary")
 
-        with gr.Column(scale=1, min_width=320):
-            image_output = gr.Image(label="Detection", height=320)
+        with gr.Column(scale=1):
+            result_html = gr.HTML(value=EMPTY_HTML)
 
-    result_html = gr.HTML()
+    example_dir = Path("examples")
+    examples = [str(p) for p in sorted(example_dir.glob("tray_*.*"))[:6]] if example_dir.exists() else []
+    if examples:
+        gr.Examples(examples=examples, inputs=image_input, label="Example trays")
 
-    run_btn.click(
-        fn=analyse,
-        inputs=[image_input, threshold, use_yolo],
-        outputs=[image_output, result_html],
-    )
-    gr.Examples(
-    examples=["examples/tray_1.jpg", "examples/tray_2.png",
-              "examples/tray_3.png", "examples/tray_4.png"],
-    inputs=image_input,
-    label="Example Trays",
-    )
-    
     gr.HTML("""
-    <div style="text-align:center;padding:28px 0 8px;color:#333;font-size:12px;letter-spacing:0.5px">
-      IE University · AI Project · Filo · Nicolas · Yago · Dimash · JP · Santi
+    <div style="text-align:center;padding:28px;color:#c4b8a8;font-size:12px;letter-spacing:0.5px;
+                font-family:system-ui;border-top:1px solid #d4c9b5;margin-top:32px;background:#ede8df">
+      IE University &middot; AI Project &middot; Filo &middot; Nicolas &middot; Yago &middot; Dimash &middot; JP &middot; Santi
     </div>""")
 
+    run_btn.click(fn=analyse, inputs=[image_input, threshold, use_yolo], outputs=[result_html])
 
+# NEW — remove css from launch()
 if __name__ == "__main__":
-    demo.launch(share=True, css=css)
+    app.launch(share=not args.no_share, server_port=args.port)

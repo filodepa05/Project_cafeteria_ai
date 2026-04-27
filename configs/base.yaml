@@ -61,3 +61,6 @@ nutrition:
 _debug:
   use_synthetic: false
   synthetic_samples: 64
+
+yolo:
+  weights_path: "src/weights/yolo_best.pt"
