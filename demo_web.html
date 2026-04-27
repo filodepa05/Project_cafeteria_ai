@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartTray — IE University</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #07070e;
+    --surface: #0f0f1a;
+    --surface2: #141425;
+    --border: rgba(255,255,255,0.07);
+    --accent: #6C63FF;
+    --accent-dim: rgba(108,99,255,0.15);
+    --accent-border: rgba(108,99,255,0.35);
+    --text: #f0f0f0;
+    --muted: #555;
+    --red: #ff8a80;
+    --blue: #80d8ff;
+    --green: #b9f6ca;
+    --yellow: #ffe57f;
+    --teal: #00D4AA;
+    --orange: #FFB347;
+    --r: 14px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 48px 20px 80px;
+  }
+
+  .wrap { max-width: 960px; margin: 0 auto; }
+
+  /* ── Header ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent-dim); border: 1px solid var(--accent-border);
+    border-radius: 999px; padding: 5px 16px;
+    font-size: 11px; color: #9d97ff; letter-spacing: 2px; font-weight: 600;
+    margin-bottom: 22px;
+  }
+  h1 {
+    font-size: clamp(38px, 6vw, 56px); font-weight: 800;
+    letter-spacing: -2px; line-height: 1.05; margin-bottom: 14px; color: #fff;
+  }
+  h1 span { color: var(--accent); }
+  .subtitle { color: var(--muted); font-size: 16px; max-width: 480px; margin: 0 auto 36px; line-height: 1.65; }
+
+  /* ── Layout ── */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 2px dashed var(--accent-border); border-radius: var(--r);
+    background: var(--surface); min-height: 300px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden; position: relative;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(108,99,255,0.06); }
+  .upload-zone img { width: 100%; height: 300px; object-fit: cover; display: block; }
+  .upload-placeholder { text-align: center; padding: 32px; pointer-events: none; }
+  .upload-icon { font-size: 44px; margin-bottom: 14px; opacity: 0.35; }
+  .upload-placeholder p { color: #fff; font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+  .upload-placeholder small { color: var(--muted); font-size: 13px; }
+  #file-input { display: none; }
+
+  /* ── Button ── */
+  .btn {
+    width: 100%; margin-top: 12px; padding: 15px 24px;
+    background: var(--accent); color: #fff; border: none; border-radius: 11px;
+    font-size: 15px; font-weight: 700; font-family: inherit;
+    cursor: pointer; transition: all 0.18s;
+    box-shadow: 0 0 28px rgba(108,99,255,0.35);
+    letter-spacing: 0.3px;
+  }
+  .btn:hover:not(:disabled) { background: #5a52e0; transform: translateY(-1px); box-shadow: 0 0 40px rgba(108,99,255,0.5); }
+  .btn:disabled { background: rgba(108,99,255,0.25); color: #444; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  /* ── Options ── */
+  .options { margin-top: 12px; padding: 14px 16px; background: var(--surface); border-radius: 10px; border: 1px solid var(--border); }
+  .options summary { color: var(--muted); font-size: 12px; letter-spacing: 1px; font-weight: 600; cursor: pointer; user-select: none; }
+  .options-body { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider-row label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .slider-row span { font-size: 13px; font-weight: 600; min-width: 30px; text-align: right; color: var(--text); }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .checkbox-row input { accent-color: var(--accent); }
+
+  /* ── Status badges ── */
+  .status-row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .status-badge {
+    font-size: 11px; padding: 3px 12px; border-radius: 99px;
+    font-weight: 600; letter-spacing: 1px;
+  }
+
+  /* ── Right panel ── */
+  .panel-empty { padding: 48px 24px; text-align: center; color: #2a2a3a; font-size: 14px; }
+  .panel-empty .icon { font-size: 36px; margin-bottom: 14px; opacity: 0.3; }
+
+  /* ── Loading ── */
+  .loading { padding: 48px 24px; text-align: center; }
+  .spinner {
+    width: 44px; height: 44px; margin: 0 auto 22px;
+    border: 3px solid rgba(108,99,255,0.15); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.75s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading p { color: #fff; font-weight: 600; margin-bottom: 10px; }
+  .dots { display: flex; gap: 7px; justify-content: center; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.1); transition: background 0.3s; }
+  .dot.active { background: var(--accent); }
+
+  /* ── Score card ── */
+  .results { animation: fadeUp 0.35s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  .score-card {
+    display: flex; align-items: center; gap: 20px; padding: 22px 24px;
+    background: linear-gradient(135deg, #1a1040, #0d1a2e);
+    border-radius: var(--r); border: 1px solid var(--accent-border);
+    margin-bottom: 14px;
+  }
+  .score-num { text-align: center; min-width: 100px; }
+  .score-num .n { font-size: 52px; font-weight: 800; line-height: 1; }
+  .score-num .lbl { font-size: 9px; letter-spacing: 2px; color: var(--muted); margin-top: 4px; }
+  .score-divider { width: 1px; height: 56px; background: var(--border); flex-shrink: 0; }
+  .score-text { flex: 1; }
+  .score-text .grade { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; }
+  .score-text .mode-tag {
+    display: inline-block; font-size: 9px; letter-spacing: 1.5px; font-weight: 700;
+    padding: 2px 9px; border-radius: 99px; margin-left: 8px; vertical-align: middle;
+  }
+  .score-text .summary { font-size: 13px; color: #aaa; line-height: 1.65; margin-top: 6px; }
+  .macro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 190px; }
+  .macro-cell {
+    border-radius: 10px; padding: 9px 7px; text-align: center;
+    border: 1px solid; font-size: 9px; color: var(--muted); letter-spacing: 1px;
+  }
+  .macro-cell .val { font-size: 18px; font-weight: 800; line-height: 1; margin-bottom: 3px; }
+
+  /* ── Item table ── */
+  .item-table { background: var(--surface); border-radius: var(--r); overflow: hidden; border: 1px solid var(--border); }
+  .item-table table { width: 100%; border-collapse: collapse; }
+  .item-table th {
+    padding: 11px 13px; font-size: 10px; letter-spacing: 1.5px; font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  .item-table td { padding: 10px 13px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .item-table tr:last-child td { border-bottom: none; }
+  .item-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--text); }
+  .dot-color { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .cal-bar-wrap { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .cal-bar { width: 56px; height: 4px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden; }
+  .cal-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+  .tfoot-row td { padding: 12px 13px; font-weight: 700; background: rgba(108,99,255,0.07); border-top: 1px solid var(--border); }
+
+  /* ── Error ── */
+  .error-box { padding: 20px; background: rgba(255,107,107,0.07); border: 1px solid rgba(255,107,107,0.2); border-radius: var(--r); color: #ff8a80; font-size: 14px; line-height: 1.6; }
+
+  /* ── Footer ── */
+  footer { text-align: center; margin-top: 52px; color: #1e1e2e; font-size: 12px; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div style="text-align:center;margin-bottom:40px">
+    <div class="badge">AI &middot; COMPUTER VISION &middot; NUTRITION</div>
+    <h1>Smart<span>Tray</span></h1>
+    <p class="subtitle">Point a camera at any cafeteria tray. Get instant calorie and macro breakdowns — powered by computer vision.</p>
+  </div>
+
+  <!-- Main grid -->
+  <div class="grid">
+
+    <!-- Left: upload -->
+    <div>
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="upload-placeholder" id="placeholder">
+          <div class="upload-icon">🍽️</div>
+          <p>Drop a tray photo here</p>
+          <small>or click to browse &middot; JPG, PNG, WEBP</small>
+        </div>
+        <img id="preview-img" style="display:none" alt="tray preview">
+      </div>
+      <input type="file" id="file-input" accept="image/*">
+
+      <details class="options" style="margin-top:12px">
+        <summary>⚙ Options</summary>
+        <div class="options-body">
+          <div class="slider-row">
+            <label>Confidence</label>
+            <input type="range" id="threshold" min="0.05" max="0.9" step="0.05" value="0.3">
+            <span id="threshold-val">0.30</span>
+          </div>
+        </div>
+      </details>
+
+      <button class="btn" id="analyse-btn" disabled onclick="analyse()">⚡ Analyse Tray</button>
+
+      <div class="status-row" id="status-row" style="display:none">
+        <span class="status-badge" id="mode-badge"></span>
+      </div>
+    </div>
+
+    <!-- Right: results -->
+    <div id="right-panel">
+      <div class="panel-empty">
+        <div class="icon">📊</div>
+        Results will appear here after analysis
+      </div>
+    </div>
+
+  </div>
+
+  <footer>IE University &middot; AI Project &middot; Filo &middot; Nicolas &middot; Yago &middot; Dimash &middot; JP &middot; Santi</footer>
+</div>
+
+<script>
+// ── Nutrition DB (USDA per 100g) ──────────────────────────────
+const DB = {
+  pasta:{cal:158,p:5.8,c:30.9,f:0.9}, rice:{cal:130,p:2.7,c:28.2,f:0.3},
+  pizza:{cal:266,p:11,c:33,f:10}, bread:{cal:265,p:9,c:49,f:3.2},
+  fries:{cal:312,p:3.4,c:41.4,f:15}, couscous:{cal:112,p:3.8,c:23.2,f:0.2},
+  potatoes:{cal:87,p:1.9,c:20.1,f:0.1}, wrap_sandwich:{cal:220,p:10,c:28,f:7},
+  grilled_chicken:{cal:165,p:31,c:0,f:3.6}, fried_chicken:{cal:246,p:22.5,c:11,f:12},
+  chicken_stew:{cal:175,p:22,c:5,f:7}, turkey:{cal:149,p:29,c:0,f:3},
+  grilled_beef:{cal:217,p:26,c:0,f:12}, beef_stew:{cal:190,p:18,c:8,f:9},
+  meatballs:{cal:195,p:13.5,c:8,f:12}, grilled_pork:{cal:212,p:27,c:0,f:11},
+  pork_ribs:{cal:292,p:19,c:4,f:22}, salmon:{cal:208,p:20,c:0,f:13},
+  hake:{cal:90,p:18,c:0,f:1.3}, tuna:{cal:144,p:23.3,c:0,f:4.9},
+  cod:{cal:82,p:17.8,c:0,f:0.7}, grilled_fish:{cal:96,p:20,c:0,f:1.8},
+  fried_fish:{cal:228,p:14,c:18,f:11}, eggs:{cal:155,p:11,c:1.1,f:11},
+  lentils:{cal:116,p:9,c:20.1,f:0.4}, chickpeas:{cal:164,p:8.9,c:27.4,f:2.6},
+  salad:{cal:65,p:3,c:6,f:3.5}, soup_cream:{cal:72,p:2,c:10,f:3},
+  grilled_vegetables:{cal:45,p:1.8,c:8,f:1.5}, sauteed_vegetables:{cal:60,p:2.5,c:9,f:2},
+  broccoli:{cal:55,p:3.7,c:7,f:1.5}, stuffed_peppers:{cal:115,p:7,c:10,f:5},
+  poke_bowl:{cal:145,p:10,c:17,f:4}, lasagne:{cal:135,p:8,c:13,f:5.5},
+  fresh_fruit:{cal:52,p:0.5,c:13,f:0.2}, fruit_salad:{cal:55,p:0.8,c:14,f:0.2},
+  yogurt:{cal:61,p:3.5,c:4.7,f:3.3}, cake_pastry:{cal:380,p:5.5,c:50,f:18},
+  ice_cream_sorbet:{cal:195,p:3.5,c:28,f:8}, juice_drink:{cal:45,p:0.5,c:11,f:0.1},
+  rotisserie_chicken:{cal:190,p:27,c:0,f:9}, fried_potatoes:{cal:265,p:3,c:35,f:13},
+  baked_potatoes:{cal:150,p:3.5,c:30,f:2.5},
+};
+
+const GRAMS = {
+  pasta:250,rice:220,pizza:200,bread:80,fries:120,couscous:200,potatoes:180,
+  wrap_sandwich:200,grilled_chicken:170,fried_chicken:180,chicken_stew:250,
+  turkey:160,grilled_beef:180,beef_stew:250,meatballs:200,grilled_pork:170,
+  pork_ribs:220,salmon:160,hake:160,tuna:150,cod:160,grilled_fish:150,
+  fried_fish:160,eggs:100,lentils:250,chickpeas:220,salad:130,soup_cream:280,
+  grilled_vegetables:150,sauteed_vegetables:150,broccoli:150,stuffed_peppers:200,
+  poke_bowl:350,lasagne:300,fresh_fruit:150,fruit_salad:180,yogurt:125,
+  cake_pastry:100,ice_cream_sorbet:120,juice_drink:250,
+  rotisserie_chicken:250,fried_potatoes:150,baked_potatoes:180,
+};
+
+const COLORS = ['#6C63FF','#00D4AA','#FF6B6B','#FFB347','#4FC3F7','#F06292','#AED581','#FF8A65','#BA68C8','#4DB6AC'];
+
+function calcNutrition(food, grams) {
+  const d = DB[food]; if (!d) return {calories:0,protein_g:0,carbs_g:0,fat_g:0};
+  const f = grams / 100;
+  return {
+    calories: Math.round(d.cal * f * 10) / 10,
+    protein_g: Math.round(d.p * f * 10) / 10,
+    carbs_g: Math.round(d.c * f * 10) / 10,
+    fat_g: Math.round(d.f * f * 10) / 10,
+  };
+}
+
+function healthScore(t, n) {
+  if (!n) return 0;
+  let s = 0;
+  const cal = t.calories, prot = t.protein_g, fat = t.fat_g, carb = t.carbs_g;
+  if (cal>=600&&cal<=900) s+=30; else if (cal>=300&&cal<=1200) s+=15;
+  if (prot>=35) s+=25; else if (prot>=25) s+=20; else if (prot>=15) s+=12; else if (prot>=8) s+=5;
+  const fp = cal>0 ? fat*9/cal*100 : 0;
+  if (fp>=25&&fp<=40) s+=25; else if (fp>=15&&fp<=55) s+=12;
+  const cp = cal>0 ? carb*4/cal*100 : 0;
+  if (cp>=40&&cp<=55) s+=20; else if (cp>=20&&cp<=75) s+=10;
+  return Math.max(0, Math.min(100, s));
+}
+
+function scoreLabel(s) {
+  if (s>=80) return {label:'Excellent',color:'#00D4AA'};
+  if (s>=60) return {label:'Good',color:'#6C63FF'};
+  if (s>=40) return {label:'Moderate',color:'#FFB347'};
+  return {label:'Needs work',color:'#FF6B6B'};
+}
+
+function generateSummary(totals, items) {
+  const {calories:cal, protein_g:prot, fat_g:fat} = totals;
+  const sentences = [];
+  if (cal > 800) sentences.push('This is a high-calorie meal.');
+  else if (cal < 400) sentences.push('This is a light meal — consider adding more if this is your main meal.');
+  else sentences.push(`This meal provides ${Math.round(cal)} kcal, a moderate amount.`);
+  if (prot < 15) sentences.push('Protein is low — consider adding chicken, eggs, or legumes.');
+  if (cal > 0 && (fat * 9 / cal) > 0.40) sentences.push('This meal is high in fat.');
+  const vegs = ['broccoli','salad','grilled_vegetables','sauteed_vegetables','fresh_fruit','fruit_salad','stuffed_peppers'];
+  if (!items.some(i => vegs.some(v => i.food.includes(v)))) sentences.push('Adding vegetables would improve nutritional balance.');
+  const macros = {protein: prot, carbohydrates: totals.carbs_g, fat};
+  const top = Object.entries(macros).sort((a,b)=>b[1]-a[1])[0][0];
+  sentences.push(`Good source of ${top}.`);
+  return sentences.join(' ');
+}
+
+// ── State ──────────────────────────────────────────────────────
+let imageBase64 = null;
+
+// ── File handling ──────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const previewImg = document.getElementById('preview-img');
+const placeholder = document.getElementById('placeholder');
+const analyseBtn = document.getElementById('analyse-btn');
+
+function loadImage(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    imageBase64 = e.target.result.split(',')[1];
+    previewImg.src = e.target.result;
+    previewImg.style.display = 'block';
+    placeholder.style.display = 'none';
+    analyseBtn.disabled = false;
+    document.getElementById('right-panel').innerHTML = `
+      <div class="panel-empty"><div class="icon">✓</div>Image loaded — click Analyse Tray</div>`;
+  };
+  reader.readAsDataURL(file);
+}
+
+fileInput.addEventListener('change', e => loadImage(e.target.files[0]));
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); loadImage(e.dataTransfer.files[0]); });
+
+document.getElementById('threshold').addEventListener('input', e => {
+  document.getElementById('threshold-val').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+// ── Loading UI ─────────────────────────────────────────────────
+const loadingSteps = ['Scanning tray image…','Identifying food items…','Calculating portions…','Running nutrition analysis…'];
+let stepTimer = null;
+
+function showLoading() {
+  let step = 0;
+  const dots = loadingSteps.map((_,i) => `<div class="dot${i===0?' active':''}"></div>`).join('');
+  document.getElementById('right-panel').innerHTML = `
+    <div class="loading">
+      <div class="spinner"></div>
+      <p id="step-text">${loadingSteps[0]}</p>
+      <div class="dots">${dots}</div>
+    </div>`;
+  stepTimer = setInterval(() => {
+    step = Math.min(step + 1, loadingSteps.length - 1);
+    const el = document.getElementById('step-text');
+    const dotEls = document.querySelectorAll('.dot');
+    if (el) el.textContent = loadingSteps[step];
+    dotEls.forEach((d, i) => d.classList.toggle('active', i <= step));
+  }, 900);
+}
+
+function stopLoading() { if (stepTimer) clearInterval(stepTimer); }
+
+// ── Analyse ────────────────────────────────────────────────────
+async function analyse() {
+  if (!imageBase64) return;
+  analyseBtn.disabled = true;
+  showLoading();
+
+  const categories = Object.keys(DB).join(', ');
+  const thr = parseFloat(document.getElementById('threshold').value);
+
+  const systemPrompt = `You are a food nutrition analysis AI for a smart cafeteria tray system.
+Identify all visible food items in the tray image and respond ONLY with valid JSON (no markdown, no explanation, no backticks).
+
+Known food categories: ${categories}
+
+Match each detected item to one of the known categories above (use underscores, e.g. "grilled_chicken").
+Use realistic gram estimates for cafeteria portions.
+If no food is visible, return: {"items":[],"summary":"No food items detected."}
+
+JSON format:
+{"items":[{"food":"pasta","grams":250,"confidence":0.92},{"food":"grilled_chicken","grams":170,"confidence":0.87}],"summary":"2-3 sentence nutritional summary here."}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        system: systemPrompt,
+        messages: [{
+          role: 'user',
+          content: [
+            {type:'image', source:{type:'base64', media_type:'image/jpeg', data: imageBase64}},
+            {type:'text', text:'Analyse this cafeteria tray. Return JSON only.'}
+          ]
+        }]
+      })
+    });
+
+    const data = await res.json();
+    const text = (data.content?.find(b => b.type === 'text')?.text || '').trim();
+    const parsed = JSON.parse(text);
+
+    const items = (parsed.items || []).map(item => {
+      const grams = item.grams || GRAMS[item.food] || 150;
+      const nutr = calcNutrition(item.food, grams);
+      return { ...item, grams, ...nutr };
+    });
+
+    const totals = items.reduce((a, i) => ({
+      calories: Math.round((a.calories + i.calories) * 10) / 10,
+      protein_g: Math.round((a.protein_g + i.protein_g) * 10) / 10,
+      carbs_g: Math.round((a.carbs_g + i.carbs_g) * 10) / 10,
+      fat_g: Math.round((a.fat_g + i.fat_g) * 10) / 10,
+    }), {calories:0, protein_g:0, carbs_g:0, fat_g:0});
+
+    const summary = parsed.summary || generateSummary(totals, items);
+    stopLoading();
+    renderResults(items, totals, summary);
+
+  } catch(e) {
+    stopLoading();
+    document.getElementById('right-panel').innerHTML = `
+      <div class="error-box">Analysis failed. Check your internet connection, then try again.<br><small style="color:#c44;margin-top:6px;display:block">${e.message}</small></div>`;
+  }
+
+  analyseBtn.disabled = false;
+}
+
+// ── Render results ─────────────────────────────────────────────
+function renderResults(items, totals, summary) {
+  if (!items.length) {
+    document.getElementById('right-panel').innerHTML = `<div class="panel-empty"><div class="icon">🔍</div>No food items detected — try a clearer photo.</div>`;
+    return;
+  }
+
+  const s = healthScore(totals, items.length);
+  const {label, color} = scoreLabel(s);
+  const maxCal = Math.max(...items.map(i => i.calories), 1);
+
+  const rows = items.map((item, i) => {
+    const c = COLORS[i % COLORS.length];
+    const name = item.food.replace(/_/g,' ').replace(/\b\w/g, x => x.toUpperCase());
+    const barW = Math.round(item.calories / maxCal * 100);
+    return `
+    <tr>
+      <td><div class="item-name"><div class="dot-color" style="background:${c}"></div>${name}</div>
+          <div style="color:var(--muted);font-size:11px;margin-top:2px;margin-left:15px">${item.grams}g</div></td>
+      <td style="text-align:right">
+        <div class="cal-bar-wrap">
+          <div class="cal-bar"><div class="cal-bar-fill" style="width:${barW}%;background:${c}"></div></div>
+          <span style="color:var(--red);font-weight:700;min-width:48px;text-align:right;font-size:14px">${item.calories}</span>
+        </div>
+      </td>
+      <td style="text-align:center;color:var(--blue);font-size:13px">${item.protein_g}g</td>
+      <td style="text-align:center;color:var(--green);font-size:13px">${item.carbs_g}g</td>
+      <td style="text-align:center;color:var(--yellow);font-size:13px">${item.fat_g}g</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('right-panel').innerHTML = `
+  <div class="results">
+    <div class="score-card">
+      <div class="score-num">
+        <div class="n" style="color:${color}">${s}</div>
+        <div class="lbl">HEALTH SCORE</div>
+      </div>
+      <div class="score-divider"></div>
+      <div class="score-text">
+        <div class="grade" style="color:${color}">${label.toUpperCase()}</div>
+        <div class="summary">${summary}</div>
+      </div>
+      <div class="macro-grid">
+        <div class="macro-cell" style="border-color:rgba(255,138,128,0.2);background:rgba(255,138,128,0.07)">
+          <div class="val" style="color:var(--red)">${totals.calories}</div>KCAL
+        </div>
+        <div class="macro-cell" style="border-color:rgba(128,216,255,0.2);background:rgba(128,216,255,0.07)">
+          <div class="val" style="color:var(--blue)">${totals.protein_g}g</div>PROTEIN
+        </div>
+        <div class="macro-cell" style="border-color:rgba(185,246,202,0.2);background:rgba(185,246,202,0.07)">
+          <div class="val" style="color:var(--green)">${totals.carbs_g}g</div>CARBS
+        </div>
+        <div class="macro-cell" style="border-color:rgba(255,229,127,0.2);background:rgba(255,229,127,0.07)">
+          <div class="val" style="color:var(--yellow)">${totals.fat_g}g</div>FAT
+        </div>
+      </div>
+    </div>
+
+    <div class="item-table">
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left;color:var(--muted)">ITEM</th>
+            <th style="text-align:right;color:var(--red)">CALORIES</th>
+            <th style="text-align:center;color:var(--blue)">PROTEIN</th>
+            <th style="text-align:center;color:var(--green)">CARBS</th>
+            <th style="text-align:center;color:var(--yellow)">FAT</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr class="tfoot-row">
+            <td style="color:white">TOTAL</td>
+            <td style="text-align:right;color:var(--red);font-size:16px">${totals.calories}</td>
+            <td style="text-align:center;color:var(--blue)">${totals.protein_g}g</td>
+            <td style="text-align:center;color:var(--green)">${totals.carbs_g}g</td>
+            <td style="text-align:center;color:var(--yellow)">${totals.fat_g}g</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>`;
+}
+</script>
+</body>
+</html>
