@@ -217,7 +217,7 @@ def build_html(items, totals, ann_b64, is_yolo):
     s = health_score(totals, len(items))
     label, color = score_meta(s)
     summary = generate_summary({"items":items,"totals":totals})
-    max_cal = max((x["calories"] for x in items), default=1)
+    max_cal = max((x["calories"] for x in items), default=1) or 1
     mode_txt = "YOLO" if is_yolo else "ResNet"
 
     rows = ""
