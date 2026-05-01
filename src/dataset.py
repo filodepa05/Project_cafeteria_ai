@@ -164,7 +164,7 @@ def get_val_transforms(image_size: int = 640) -> A.Compose:
         A.Resize(image_size, image_size),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
-    ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels', 'portions']))
+    ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels', 'portions'], clip=True))
 
 
 # ═══════════════════════════════════════════════════════════════════
