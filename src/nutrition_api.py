@@ -150,7 +150,7 @@ def parse_nutrients(food_item: dict) -> dict[str, float]:
     return nutrients
 
 
-def estimate_nutrition(class_id: int, grams: float, use_api: bool = True) -> NutritionInfo:
+def estimate_nutrition(class_id: int, grams: float, use_api: bool = True, cache_path: Path = None) -> NutritionInfo:
     """Estimate nutrition for a food item using USDA API with caching.
     
     This function maintains the same interface as src.nutrition.estimate_nutrition
@@ -190,7 +190,7 @@ def estimate_nutrition(class_id: int, grams: float, use_api: bool = True) -> Nut
     if not use_api:
         return fallback_estimate_nutrition(class_id, grams)
     
-    cache = NutritionCache()
+    cache = NutritionCache(cache_path or DEFAULT_CACHE_PATH)
     
     # 1. Check cache
     cached = cache.get(food_name)
@@ -212,7 +212,7 @@ def estimate_nutrition(class_id: int, grams: float, use_api: bool = True) -> Nut
             # 4. Save to cache
             cache.set(food_name, per100)
             
-        except (requests.RequestException, ValueError) as e:
+        except Exception as e:
             # API unavailable or error - fall back
             print(f"API error for {food_name}: {e}. Using fallback.")
             return fallback_estimate_nutrition(class_id, grams)
@@ -230,15 +230,15 @@ def estimate_nutrition(class_id: int, grams: float, use_api: bool = True) -> Nut
     )
 
 
-def clear_cache():
+def clear_cache(cache_path: Path = None):
     """Clear the nutrition cache."""
-    cache = NutritionCache()
+    cache = NutritionCache(cache_path or DEFAULT_CACHE_PATH)
     cache._cache = {}
     cache.save()
     print(f"Cache cleared: {cache.cache_path}")
 
 
-def get_cache_stats() -> dict:
+def get_cache_stats(cache_path: Path = None) -> dict:
     """Get statistics about the nutrition cache.
     
     Returns
@@ -246,7 +246,7 @@ def get_cache_stats() -> dict:
     dict
         Statistics about cached items
     """
-    cache = NutritionCache()
+    cache = NutritionCache(cache_path or DEFAULT_CACHE_PATH)
     return {
         "cache_path": str(cache.cache_path),
         "cached_items": len(cache._cache),

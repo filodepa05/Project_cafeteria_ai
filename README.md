@@ -1,22 +1,53 @@
-# Smart Tray — Cafeteria Tray Nutritional Analysis
+# Smart Tray — Automated Cafeteria Tray Nutritional Analysis
 
-Detects food items on a cafeteria tray image, estimates portion sizes, and
-outputs calorie + macronutrient breakdowns as structured JSON.
+## Overview
 
-## Architecture
+Smart Tray is an end-to-end computer vision system that analyzes cafeteria tray images to:
+
+* Detect food items
+* Estimate portion sizes (grams)
+* Compute nutritional information (calories, protein, carbs, fat)
+
+The system integrates object detection, regression, and external nutrition data into a unified inference pipeline that outputs structured JSON.
+
+---
+
+## System Architecture
 
 ```
-image ──► detection head ──► per-item bboxes
-               │
-               ▼
-         portion head ──► estimated grams
-               │
-               ▼
-        nutrition lookup ──► { calories, protein, carbs, fat }
-               │
-               ▼
-          structured JSON
+Image
+  │
+  ▼
+Object Detection (YOLO-based)
+  │
+  ▼
+Bounding Boxes + Class Labels
+  │
+  ▼
+Portion Estimation (Regression Head)
+  │
+  ▼
+Estimated Grams per Item
+  │
+  ▼
+Nutrition Lookup (USDA API / Fallback)
+  │
+  ▼
+Structured Output (JSON)
 ```
+
+---
+
+## Key Features
+
+* Multi-task learning: detection + portion estimation
+* Real-time inference capability
+* Robust fallback nutrition system (works without API)
+* Modular and extensible architecture
+* Config-driven experimentation
+* Clean JSON outputs for downstream integration
+
+---
 
 ## Repository Structure
 
@@ -24,64 +55,183 @@ image ──► detection head ──► per-item bboxes
 smart-tray/
 ├── train.py                  # Training entry point
 ├── infer.py                  # Inference entry point
-├── configs/
-│   ├── base.yaml             # Default hyperparameters
+├── demo.py                   # Interactive demo (Gradio UI)
+├── configs/                  # YAML configuration files
+│   ├── base.yaml
 │   └── experiment/
-│       └── debug.yaml        # Fast debug run (2 epochs, tiny batch)
 ├── src/
-│   ├── config.py             # Dataclass-based configuration
-│   ├── dataset.py            # TrayDataset (detection + portion labels)
+│   ├── config.py             # Configuration handling
+│   ├── dataset.py            # Dataset loader (COCO + portions)
 │   ├── models/
-│   │   ├── detector.py       # Detection backbone + head
+│   │   ├── detector.py       # Detection model (YOLO backbone)
 │   │   ├── portion.py        # Portion regression head
 │   │   └── tray_model.py     # Combined multi-task model
-│   ├── trainer.py            # Training loop with validation
-│   ├── inference.py          # End-to-end inference pipeline
-│   ├── nutrition.py          # Food → calorie/macro lookup
+│   ├── trainer.py            # Training + validation loop
+│   ├── inference.py          # Full inference pipeline
+│   ├── nutrition.py          # Nutrition lookup (API + fallback)
 │   └── utils/
-│       ├── io.py             # File I/O helpers
-│       ├── viz.py            # Visualization (bbox overlay, charts)
-│       └── metrics.py        # mAP, IoU, portion error metrics
+│       ├── io.py
+│       ├── viz.py
+│       └── metrics.py
 ├── tests/                    # Unit tests
-├── data/                     # ← put datasets here (gitignored)
+├── data/                     # Dataset directory (not tracked)
+├── checkpoints/              # Model weights
 └── requirements.txt
 ```
 
-## Quick Start
+---
+
+## Installation
 
 ```bash
-# 1 — Install
 pip install -r requirements.txt
+```
 
-# 2 — Sanity check with synthetic data (no real images needed)
+---
+
+## Quick Start
+
+### 1. Run Debug Training (Sanity Check)
+
+```bash
 python train.py --config configs/experiment/debug.yaml
+```
 
-# 3 — Inference on a single image
-python infer.py path/to/tray.jpg --output result.json
+Runs a short training cycle on synthetic/small data to verify pipeline correctness.
 
-# 4 — Run tests
+---
+
+### 2. Run Inference
+
+```bash
+python infer.py examples/tray_1.jpg --auto-checkpoint
+```
+
+Output:
+
+* Detected food items
+* Portion estimates
+* Nutritional breakdown
+* JSON summary
+
+---
+
+### 3. Run Demo UI (Optional)
+
+```bash
+python demo.py
+```
+
+Opens a local web interface for interactive testing.
+
+---
+
+### 4. Run Tests
+
+```bash
 pytest tests/ -v
 ```
 
-## Configuration
+---
 
-All hyperparameters live in YAML files under `configs/`.  Any value can also
-be overridden from the CLI:
+## Configuration System
+
+All hyperparameters are defined in YAML files under `configs/`.
+
+Example override:
 
 ```bash
 python train.py --config configs/base.yaml --epochs 50 --lr 0.0003
 ```
 
-## Data Format
+---
 
-The dataset expects this layout:
+## Dataset Format
+
+Expected structure:
 
 ```
 data/
 ├── images/
 │   ├── tray_0001.jpg
 │   └── ...
-└── annotations.json      # COCO-format with extra "portion_grams" field
+└── annotations.json
 ```
 
-See `src/dataset.py` for the schema.
+Annotations follow COCO format with an additional field:
+
+```
+"portion_grams": float
+```
+
+---
+
+## Nutrition Data
+
+The system supports two modes:
+
+### 1. USDA API (Recommended)
+
+Provides real nutritional values.
+
+Set API key:
+
+```bash
+# Windows PowerShell
+$env:USDA_API_KEY="YOUR_KEY"
+```
+
+### 2. Fallback Mode
+
+Used automatically if API is unavailable.
+Ensures system robustness but may reduce accuracy.
+
+---
+
+## Output Format
+
+Example JSON output:
+
+```json
+{
+  "items_detected": 2,
+  "items": [...],
+  "totals": {
+    "calories": 389.9,
+    "protein_g": 34.3,
+    "carbs_g": 25.7,
+    "fat_g": 16.5
+  }
+}
+```
+
+---
+
+## Evaluation Metrics
+
+* Detection: mAP, IoU
+* Portion estimation: MAE / MSE (grams)
+* End-to-end: nutritional error vs ground truth
+
+---
+
+## Limitations
+
+* Portion estimation accuracy depends on training data quality
+* Food appearance variability may reduce detection accuracy
+* Nutrition lookup relies on matching predicted labels to database entries
+
+---
+
+## Future Work
+
+* Improve portion estimation using depth or multi-view inputs
+* Expand food category coverage
+* Optimize inference latency
+* Add meal recommendation system
+
+---
+
+## Conclusion
+
+Smart Tray demonstrates a practical application of computer vision in food analytics by combining detection, regression, and external data integration into a robust, modular pipeline suitable for real-world deployment.
