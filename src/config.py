@@ -72,6 +72,11 @@ class DebugConfig:
 
 
 @dataclass
+class YoloConfig:
+    weights_path: str = "src/weights/yolo_best.pt"
+
+
+@dataclass
 class NutritionConfig:
     usda_api_key: str | None = None
     cache_path: str = "data/nutrition_cache.json"
@@ -89,6 +94,7 @@ class Config:
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     nutrition: NutritionConfig = field(default_factory=NutritionConfig)
+    yolo: YoloConfig = field(default_factory=YoloConfig)
     _debug: DebugConfig = field(default_factory=DebugConfig)
 
     # ── Serialisation ─────────────────────────────────────────────
@@ -110,6 +116,7 @@ _SUB_MAP: dict[str, type] = {
     "checkpoint": CheckpointConfig,
     "logging": LoggingConfig,
     "nutrition": NutritionConfig,
+    "yolo": YoloConfig,
     "_debug": DebugConfig,
 }
 

@@ -281,19 +281,21 @@ class SyntheticTrayDataset(Dataset):
         return self.n
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        rng = np.random.RandomState(idx)
+        torch.manual_seed(idx)
         img = torch.randn(3, self.size, self.size)
 
-        n_objs = np.random.randint(1, 4)
+        n_objs = rng.randint(1, 4)
         boxes = []
         for _ in range(n_objs):
-            x1 = np.random.randint(0, self.size // 2)
-            y1 = np.random.randint(0, self.size // 2)
-            x2 = np.random.randint(x1 + 20, min(x1 + self.size // 2, self.size))
-            y2 = np.random.randint(y1 + 20, min(y1 + self.size // 2, self.size))
+            x1 = rng.randint(0, self.size // 2)
+            y1 = rng.randint(0, self.size // 2)
+            x2 = rng.randint(x1 + 20, min(x1 + self.size // 2, self.size))
+            y2 = rng.randint(y1 + 20, min(y1 + self.size // 2, self.size))
             boxes.append([x1, y1, x2, y2])
 
-        labels = np.random.randint(0, self.num_classes, size=n_objs)
-        portions = np.random.uniform(50, 300, size=n_objs)
+        labels = rng.randint(0, self.num_classes, size=n_objs)
+        portions = rng.uniform(50, 300, size=n_objs)
 
         return {
             "image": img,

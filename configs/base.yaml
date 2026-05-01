@@ -37,7 +37,7 @@ inference:
 
 # ── YOLO detector ─────────────────────────────────────
 yolo:
-  weights_path: "weights/yolo_best.pt"
+  weights_path: "src/weights/yolo_best.pt"
 
 # ── Checkpointing ─────────────────────────────────────
 checkpoint:
@@ -57,7 +57,9 @@ nutrition:
   cache_path: "data/nutrition_cache.json"
   use_api: true  # Set to false to always use hardcoded values
 
-# ── Debug ─────────────────────────────────────────────
 _debug:
   use_synthetic: false
   synthetic_samples: 32
+
+yolo:
+  weights_path: "src/weights/yolo_best.pt"
