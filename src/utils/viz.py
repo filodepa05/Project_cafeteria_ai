@@ -1,70 +1,93 @@
 """
-viz.py – Visualization utilities for debugging and reporting.
+viz.py – Visualisation utilities for training and evaluation plots.
+
+Usage:
+    from src.utils.viz import plot_training_curves
+    plot_training_curves(history, save_path="plots/loss_curves.png")
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend, works on all systems
 import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
-
-def draw_predictions(
-    image_path: str | Path,
-    items: list[dict],
-    save_path: str | Path | None = None,
-) -> Image.Image:
-    """Draw predicted food labels and confidence on an image.
-
-    Parameters
-    ----------
-    image_path : path to the original image
-    items      : list of dicts from the inference pipeline (food, confidence, grams, etc.)
-    save_path  : optional path to save the annotated image
-
-    Returns
-    -------
-    PIL Image with annotations.
-    """
-    img = Image.open(image_path).convert("RGB")
-    draw = ImageDraw.Draw(img)
-
-    # Build label text for each detected item
-    y_offset = 10
-    for item in items:
-        label = f"{item['food']}  {item['confidence']:.0%}  ~{item['grams']:.0f}g  {item['calories']:.0f}kcal"
-        try:
-            from PIL import ImageFont
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
-        except (IOError, ImportError):
-            font = None  # falls back to default
-        draw.text((10, y_offset), label, fill="lime", font=font)
-        y_offset += 20
-
-    if save_path:
-        img.save(save_path)
-    return img
 
 
 def plot_training_curves(
-    train_losses: list[float],
-    val_losses: list[float],
-    save_path: str | Path = "training_curves.png",
+    history: dict,
+    save_path: str | Path = "plots/loss_curves.png",
+    dpi: int = 150,
 ) -> None:
-    """Plot and save train/val loss curves."""
-    epochs = range(1, len(train_losses) + 1)
+    """Plot training and validation loss curves.
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(epochs, train_losses, label="Train loss", linewidth=2)
-    ax.plot(epochs, val_losses, label="Val loss", linewidth=2)
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Loss")
-    ax.set_title("Training Curves")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(save_path, dpi=150)
-    plt.close(fig)
-    print(f"  Saved training curves to {save_path}")
+    Generates a single plot with:
+      - Main panel: total train loss (solid blue) vs val loss (dashed orange)
+      - Inset panel: BCE classification loss and MSE portion loss separately
+
+    Parameters
+    ----------
+    history : dict with keys:
+        "train_total", "val_total",
+        "train_cls",   "val_cls",
+        "train_portion", "val_portion"
+    save_path : where to save the figure
+    dpi : export resolution (default 150)
+    """
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    epochs = range(1, len(history["train_total"]) + 1)
+
+    fig, ax_main = plt.subplots(figsize=(10, 6))
+    fig.suptitle("ResNet18 Training & Validation Loss", fontsize=14, fontweight="bold")
+
+    # ── Main panel: total loss ─────────────────────────────────────
+    ax_main.plot(epochs, history["train_total"],
+                 label="Train Loss", color="steelblue",
+                 linewidth=2.5, linestyle="-")
+    ax_main.plot(epochs, history["val_total"],
+                 label="Val Loss", color="darkorange",
+                 linewidth=2.5, linestyle="--")
+    ax_main.set_xlabel("Epoch", fontsize=12)
+    ax_main.set_ylabel("Total Loss", fontsize=12)
+    ax_main.legend(fontsize=11, loc="upper right")
+    ax_main.grid(True, alpha=0.3)
+
+    # Mark best val loss
+    best_epoch = int(np.argmin(history["val_total"])) + 1
+    best_val   = min(history["val_total"])
+    ax_main.axvline(x=best_epoch, color="gray", linestyle=":", alpha=0.7)
+    ax_main.annotate(
+        f"Best epoch {best_epoch}\nloss={best_val:.4f}",
+        xy=(best_epoch, best_val),
+        xytext=(best_epoch + 0.5, best_val * 1.05),
+        fontsize=9,
+        color="gray",
+    )
+
+    # ── Inset panel: BCE + MSE separately ─────────────────────────
+    # Position: top-right corner inside the main plot
+    ax_inset = ax_main.inset_axes([0.55, 0.45, 0.42, 0.45])
+
+    ax_inset.plot(epochs, history["train_cls"], label="Train BCE",
+                  color="steelblue", linewidth=1.5, linestyle="-")
+    ax_inset.plot(epochs, history["val_cls"], label="Val BCE",
+                  color="darkorange", linewidth=1.5, linestyle="--")
+    ax_inset.plot(epochs, history["train_portion"], label="Train MSE",
+                  color="mediumseagreen", linewidth=1.5, linestyle="-")
+    ax_inset.plot(epochs, history["val_portion"], label="Val MSE",
+                  color="tomato", linewidth=1.5, linestyle="--")
+
+    ax_inset.set_title("BCE & MSE separately", fontsize=9)
+    ax_inset.set_xlabel("Epoch", fontsize=8)
+    ax_inset.legend(fontsize=7, loc="upper right")
+    ax_inset.grid(True, alpha=0.3)
+    ax_inset.tick_params(labelsize=7)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {save_path}")
