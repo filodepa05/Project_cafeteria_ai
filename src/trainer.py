@@ -6,6 +6,7 @@ Handles:
   • LR scheduling (cosine / step)
   • Checkpoint saving (top-K by val loss)
   • Rich progress bars
+  • Training curves via src/utils/viz.py
 """
 
 from __future__ import annotations
@@ -22,9 +23,9 @@ from torch.utils.data import DataLoader
 from src.config import Config
 from src.models.tray_model import TrayModel
 from src.utils.io import resolve_device
+from src.utils.viz import plot_training_curves
 
 try:
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
     from rich.console import Console
     HAS_RICH = True
 except ImportError:
@@ -61,34 +62,37 @@ class Trainer:
         # ── Checkpointing ─────────────────────────────────────────
         self.ckpt_dir = Path(cfg.checkpoint.save_dir)
         self.ckpt_dir.mkdir(parents=True, exist_ok=True)
-        self._best_losses: list[tuple[float, Path]] = []  # (val_loss, path)
+        self._best_losses: list[tuple[float, Path]] = []
 
         # ── Logging ───────────────────────────────────────────────
         self.console = Console() if HAS_RICH else None
         self.log_dir = Path(cfg.logging.log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
+        # ── Plots directory ───────────────────────────────────────
+        self.plots_dir = Path("plots")
+        self.plots_dir.mkdir(parents=True, exist_ok=True)
+
+        # ── History (for curves) ──────────────────────────────────
+        self.history = {
+            "train_total": [], "train_cls": [], "train_portion": [],
+            "val_total":   [], "val_cls":   [], "val_portion":   [],
+            "lr": [],
+        }
+
     # ── Loss computation ──────────────────────────────────────────
 
     def _compute_loss(self, outputs: dict, batch: dict) -> dict[str, torch.Tensor]:
-        """Compute multi-task loss from model outputs and batch targets.
-
-        For the MVP classifier, we convert per-image object labels into a
-        multi-hot vector so we can use BCEWithLogitsLoss.
-        """
-        logits = outputs["logits"]                   # (B, C)
-        grams_pred = outputs["grams"].squeeze(-1)    # (B,)
-
+        logits = outputs["logits"]
+        grams_pred = outputs["grams"].squeeze(-1)
         B, C = logits.shape
 
-        # Build multi-hot targets: shape (B, C)
         targets = torch.zeros(B, C, device=logits.device)
         for i, lbls in enumerate(batch["labels"]):
             for lbl in lbls:
                 if lbl < C:
                     targets[i, lbl] = 1.0
 
-        # Average portion grams per image as regression target
         portion_targets = torch.zeros(B, device=logits.device)
         for i, p in enumerate(batch["portions"]):
             portion_targets[i] = p.mean() if len(p) > 0 else 0.0
@@ -157,7 +161,6 @@ class Trainer:
         self._best_losses.append((val_loss, path))
         self._best_losses.sort(key=lambda x: x[0])
 
-        # Prune to keep top K
         while len(self._best_losses) > self.cfg.checkpoint.keep_top_k:
             _, old_path = self._best_losses.pop()
             old_path.unlink(missing_ok=True)
@@ -165,7 +168,6 @@ class Trainer:
     # ── Main training loop ────────────────────────────────────────
 
     def fit(self, train_loader: DataLoader, val_loader: DataLoader) -> None:
-        """Run the full training loop."""
         epochs = self.cfg.training.epochs
         print(f"\n{'═' * 60}")
         print(f"  Training TrayModel on {self.device}  —  {epochs} epochs")
@@ -175,13 +177,22 @@ class Trainer:
             t0 = time.time()
 
             train_metrics = self._train_epoch(train_loader)
-            val_metrics = self._val_epoch(val_loader)
+            val_metrics   = self._val_epoch(val_loader)
 
             if self.scheduler:
                 self.scheduler.step()
 
-            elapsed = time.time() - t0
             lr = self.optimizer.param_groups[0]["lr"]
+            elapsed = time.time() - t0
+
+            # Save to history
+            self.history["train_total"].append(train_metrics["total"])
+            self.history["train_cls"].append(train_metrics["cls"])
+            self.history["train_portion"].append(train_metrics["portion"])
+            self.history["val_total"].append(val_metrics["total"])
+            self.history["val_cls"].append(val_metrics["cls"])
+            self.history["val_portion"].append(val_metrics["portion"])
+            self.history["lr"].append(lr)
 
             print(
                 f"  Epoch {epoch:3d}/{epochs}  │  "
@@ -198,3 +209,13 @@ class Trainer:
         self._save_checkpoint(epochs, val_metrics["total"])
         print(f"\n  Training complete.  Best val loss: {self._best_losses[0][0]:.4f}")
         print(f"  Checkpoints saved to: {self.ckpt_dir}/\n")
+
+        # ── Generate plots ────────────────────────────────────────
+        print("  Generating report plots...")
+        plot_training_curves(
+            history=self.history,
+            save_path=self.plots_dir / "loss_curves.png",
+            dpi=150,
+        )
+        print(f"\n  All plots saved to: {self.plots_dir}/")
+        print("  └── loss_curves.png")
